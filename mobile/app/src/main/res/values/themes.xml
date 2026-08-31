@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Tema so do window. Toda a aparencia vem do Compose (NotifyShareTheme).
+        Isto existe para o Android ter o que pintar antes do primeiro frame:
+        sem a cor certa aqui, o app pisca branco ao abrir.
+    -->
+    <style name="Theme.NotifyShare" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

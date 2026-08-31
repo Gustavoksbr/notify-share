@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: notify-share-backend
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/notifyshare?user=postgres&password=root}
+    hikari:
+      maximum-pool-size: 10
+      pool-name: notifyshare-pool
+
+  jpa:
+    hibernate:
+      # O schema e propriedade do Flyway. Hibernate so confere se bate.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+notifyshare:
+  jwt:
+    # Trocar em qualquer ambiente que nao seja a sua maquina. Minimo 32 bytes para HS256.
+    secret: ${JWT_SECRET:dev-somente-local-troque-este-segredo-de-32-bytes-ou-mais}
+    issuer: notify-share
+    access-ttl: PT15M
+    refresh-ttl: P30D
+
+springdoc:
+  # Desligue em producao: SWAGGER_ENABLED=false remove a UI e o /v3/api-docs.
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger
+    operations-sorter: alpha
+    tags-sorter: alpha
+    display-request-duration: true
+    # Nao apaga o token ao recarregar a pagina: evita reautorizar a cada teste.
+    persist-authorization: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    com.notifyshare: DEBUG
+    org.flywaydb: INFO

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Marca provisoria: opcao B do canvas de design (sino + nos de compartilhamento).
+    O badalo do sino vira o no de origem de um grafo.
+
+    O desenho vive num espaco 48x48 dentro do grupo; o grupo o posiciona na
+    zona segura de 72dp exigida pelo icone adaptativo (108dp com margem).
+    Trocar de marca e mexer so neste arquivo.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:translateX="18"
+        android:translateY="18"
+        android:scaleX="1.5"
+        android:scaleY="1.5">
+
+        <!-- cupula do sino -->
+        <path
+            android:pathData="M14,18a10,10 0 0 1 20,0c0,7.5 2.6,8.5 2.6,8.5H11.4S14,25.5 14,18z"
+            android:strokeColor="#FFDCBE"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+
+        <!-- arestas do grafo -->
+        <path
+            android:pathData="M20.5,33.5l-4,4.5"
+            android:strokeColor="#FFDCBE"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M27.5,33.5l4,4.5"
+            android:strokeColor="#FFDCBE"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round" />
+
+        <!-- no de origem, no lugar do badalo -->
+        <path
+            android:pathData="M21,31.5a3,3 0 1,0 6,0a3,3 0 1,0 -6,0z"
+            android:fillColor="#FFDCBE" />
+
+        <!-- nos de destino -->
+        <path
+            android:pathData="M10.6,40.5a3.4,3.4 0 1,0 6.8,0a3.4,3.4 0 1,0 -6.8,0z"
+            android:strokeColor="#FFDCBE"
+            android:strokeWidth="2.6" />
+        <path
+            android:pathData="M30.6,40.5a3.4,3.4 0 1,0 6.8,0a3.4,3.4 0 1,0 -6.8,0z"
+            android:strokeColor="#FFDCBE"
+            android:strokeWidth="2.6" />
+
+    </group>
+</vector>

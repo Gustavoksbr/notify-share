@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    HTTP em claro so para o backend local durante o desenvolvimento.
+
+    localhost chega no PC pela ponte do adb (adb reverse tcp:8080 tcp:8080);
+    10.0.2.2 e o equivalente no emulador. Todo o resto continua exigindo HTTPS,
+    que e o padrao desde o Android 9.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

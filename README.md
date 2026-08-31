@@ -79,7 +79,7 @@ atalho enquanto o app está em primeiro plano; toda entrega passa pelo FCM.
 |-------|-------|--------|
 | 1 | Backend: cadastro, login, JWT com refresh rotacionado | **funcionando** |
 | 2 | Backend: amigos, busca por nickname, grants, DM | a fazer |
-| 3 | Mobile: Compose, tema, login, armazenamento de token | a fazer |
+| 3 | Mobile: Compose, tema, login, armazenamento de token | **funcionando** |
 | 4 | Mobile: captura de eventos, regras, FCM | a fazer |
 | 5 | Sobrevivência em segundo plano (watchdog, heartbeat) | a fazer |
 
@@ -150,7 +150,10 @@ app/
 │   └── src/main/kotlin/com/notifyshare/
 │       ├── auth/      domain · application · adapter
 │       └── shared/    config · web
-└── mobile/     Kotlin + Jetpack Compose  (ainda vazio)
+└── mobile/     Kotlin + Jetpack Compose + AGP 9
+    └── app/src/main/java/com/notifyshare/
+        ├── data/      local (tokens cifrados) · remote (Retrofit)
+        └── ui/        auth · home · theme
 ```
 
 O backend é hexagonal por pacote, organizado por feature, num módulo Gradle só.
@@ -158,3 +161,29 @@ Existem portas onde a troca de implementação é real e datada — envio de e-m
 push, armazenamento de mídia. Não existe porta em volta de `JpaRepository`:
 `JpaRepository` já é uma porta, e envolvê-la em outra interface acrescentaria
 arquivos sem desacoplar nada.
+
+O mobile segue Clean-lite por feature (`data` / `ui`), com MVVM e `StateFlow`.
+As decisões e as armadilhas do AGP 9 estão no ADR-005 em `DECISOES.md`.
+
+---
+
+## Rodando o app
+
+Precisa do Android SDK 36 e de um aparelho com depuração USB.
+
+```bash
+cd mobile
+./gradlew :app:installDebug
+adb reverse tcp:8080 tcp:8080
+```
+
+O `adb reverse` é o que faz o `localhost:8080` do aparelho chegar no backend
+rodando no PC. Sem ele o app não acha o servidor.
+
+Em aparelhos Xiaomi/HyperOS é preciso ligar **"Instalar via USB"** nas opções de
+desenvolvedor, além da depuração USB — senão o `adb install` falha com
+`INSTALL_FAILED_USER_RESTRICTED`.
+
+Os tokens ficam cifrados com AES/GCM usando uma chave do Android Keystore, no
+DataStore. A tela mostrada é decidida pela sessão, não pela navegação: qualquer
+coisa que limpe os tokens devolve o usuário ao login sozinha.
