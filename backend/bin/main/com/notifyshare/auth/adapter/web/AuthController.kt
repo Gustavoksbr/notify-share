@@ -4,6 +4,7 @@ import com.notifyshare.auth.application.AuthService
 import com.notifyshare.auth.application.IssuedTokens
 import com.notifyshare.auth.domain.User
 import com.notifyshare.shared.config.OpenApiConfig.Companion.BEARER_SCHEME
+import com.notifyshare.shared.web.AuthenticatedUser
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse

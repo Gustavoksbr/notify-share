@@ -22,6 +22,9 @@ class ConflictException(code: String, message: String, field: String? = null) :
 class UnauthorizedException(code: String, message: String) :
     ApiException(HttpStatus.UNAUTHORIZED, code, message)
 
+class ForbiddenException(code: String, message: String) :
+    ApiException(HttpStatus.FORBIDDEN, code, message)
+
 class NotFoundException(code: String, message: String) :
     ApiException(HttpStatus.NOT_FOUND, code, message)
 

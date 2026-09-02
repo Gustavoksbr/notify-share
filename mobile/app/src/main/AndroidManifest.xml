@@ -1,7 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Android 13+: sem isto o app nao consegue postar notificacao nenhuma. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Servico em primeiro plano: a notificacao fixa de "servico ativo" e o
+         monitor de bateria/Wi-Fi. specialUse porque ele precisa rodar enquanto
+         houver compartilhamento, sem o teto de tempo do dataSync. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Religar o servico depois de reiniciar o aparelho. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Pedir isencao da economia de bateria (tela de Permissoes). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- A tela "Escolher apps" lista os apps instalados. Exige formulario de
+         justificativa na Play Console; o nucleo do produto e saber quais apps
+         notificam. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:name=".NotifyShareApp"
@@ -24,6 +42,56 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Le as notificacoes do aparelho. O usuario concede acesso em
+             Configuracoes; o sistema mantem o servico vivo enquanto o acesso
+             estiver ligado. -->
+        <service
+            android:name=".notify.NotificationRelayService"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Servico em primeiro plano: notificacao fixa + bateria/Wi-Fi + WebSocket
+             enquanto o app esta aberto + watchdog. -->
+        <service
+            android:name=".service.ShareForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Encaminha notificacoes escolhidas para contatos autorizados enquanto o compartilhamento esta ativo." />
+        </service>
+
+        <!-- Push do FCM: token novo e mensagens de dados. -->
+        <service
+            android:name=".fcm.NotifyMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Religa o servico depois do boot, se havia compartilhamento ativo. -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Canal de notificacao padrao usado pelo FCM antes de o app criar os
+             canais dele. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="events" />
 
     </application>
 

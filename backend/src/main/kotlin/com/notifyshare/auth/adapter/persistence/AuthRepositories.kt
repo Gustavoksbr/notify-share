@@ -20,9 +20,18 @@ interface UserRepository : JpaRepository<User, UUID> {
 
     fun findByEmail(email: String): User?
 
+    fun findByGoogleSub(googleSub: String): User?
+
     fun existsByNickname(nickname: String): Boolean
 
     fun existsByEmail(email: String): Boolean
+
+    /** Busca de pessoas por nickname. O nickname ja e gravado em minusculas. */
+    fun findTop20ByNicknameStartingWithAndIdNot(prefix: String, id: UUID): List<User>
+
+    fun findAllByIdIn(ids: Collection<UUID>): List<User>
+
+    fun findAllByNicknameIn(nicknames: Collection<String>): List<User>
 }
 
 interface RefreshTokenRepository : JpaRepository<RefreshToken, UUID> {

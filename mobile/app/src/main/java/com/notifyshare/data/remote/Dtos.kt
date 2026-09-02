@@ -24,6 +24,13 @@ data class RefreshRequest(
 )
 
 @Serializable
+data class GoogleLoginRequest(
+    val idToken: String,
+    val nickname: String? = null,
+    val deviceLabel: String? = null,
+)
+
+@Serializable
 data class LogoutRequest(val refreshToken: String)
 
 @Serializable
@@ -32,6 +39,8 @@ data class UserDto(
     val nickname: String,
     val email: String,
     val createdAt: String,
+    val google: Boolean = false,
+    val hasPassword: Boolean = true,
 )
 
 @Serializable

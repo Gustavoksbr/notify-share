@@ -78,10 +78,15 @@ atalho enquanto o app está em primeiro plano; toda entrega passa pelo FCM.
 | Etapa | O quê | Status |
 |-------|-------|--------|
 | 1 | Backend: cadastro, login, JWT com refresh rotacionado | **funcionando** |
-| 2 | Backend: amigos, busca por nickname, grants, DM | a fazer |
+| 2 | Backend: amigos, busca por nickname, grants, regras, aparelhos, porta FCM | **funcionando** (fumaça) |
+| 2b | Backend: eventos (ingestão, roteamento, feed, filtros, retenção) | **funcionando** (fumaça) |
+| 2c | Backend: WebSocket, mensagens + auditoria, presença | **funcionando** (fumaça) |
 | 3 | Mobile: Compose, tema, login, armazenamento de token | **funcionando** |
-| 4 | Mobile: captura de eventos, regras, FCM | a fazer |
-| 5 | Sobrevivência em segundo plano (watchdog, heartbeat) | a fazer |
+| 4 | Mobile: FCM, captura via NotificationListener, regras, telas | **compila, falta testar no aparelho** |
+| 5 | Sobrevivência em segundo plano (foreground service, watchdog, heartbeat) | **compila, falta testar no aparelho** |
+
+"Fumaça" = exercitado ponta a ponta com `curl` + cliente WebSocket contra Postgres local; os testes
+Testcontainers (`*FlowTest`) rodam no terminal **TESTES** (precisam do Docker).
 
 Os mockups das telas e as decisões de arquitetura estão fora de `app/`, na raiz
 do repositório: `DECISOES.md` e `design/`.
@@ -120,6 +125,21 @@ Em produção, `JWT_SECRET` é obrigatório e precisa de pelo menos 32 bytes.
 | POST | `/auth/logout` | não | Revoga um refresh token |
 | POST | `/auth/logout-all` | sim | Encerra todas as sessões |
 | GET | `/me` | sim | Perfil do próprio usuário |
+| PUT/DELETE | `/devices` | sim | Registra/remove o token do FCM deste aparelho |
+| POST | `/devices/heartbeat` | sim | Sinal de vida (presença) |
+| GET | `/users/search?q=` | sim | Busca pessoas por nickname |
+| GET/POST | `/friends`, `/friends/requests` | sim | Amigos e pedidos de amizade |
+| GET/POST | `/grants`, `/grants/pending`, `/grants/offers`, `/grants/requests` | sim | Compartilhamentos e caixa de pedidos |
+| POST/DELETE | `/grants/{id}/accept\|decline\|pause\|resume` , `DELETE /grants/{id}` | sim | Ciclo de vida do grant |
+| GET/PUT | `/grants/{id}/rules` | sim | Regras por app (só o sharer edita) |
+| POST | `/events` | sim | Ingestão de evento do aparelho de origem (idempotente por `dedupKey`) |
+| GET | `/events`, `/events/conversation` | sim | Feed do destinatário, com filtros app/tipo/remetente/período |
+| POST | `/events/deliveries/{id}/read` | sim | Marca notificação como lida |
+| GET/POST | `/conversations/{nickname}` , `.../messages` , `.../read` | sim | Timeline (mensagens + auditoria de grant) |
+| GET | `/presence?users=` | sim | Quem está online agora |
+| WS | `/ws?token=` | handshake | Atalho de primeiro plano (evento/mensagem/typing/presença) |
+
+A documentação completa e navegável continua no **Swagger** (`/swagger`).
 
 Erros saem sempre no mesmo formato, e o cliente decide pelo `code`, nunca pela
 mensagem:
@@ -148,22 +168,44 @@ vazamento: toda a família de tokens daquele login é revogada de uma vez.
 app/
 ├── backend/    Kotlin + Spring Boot 4 + Postgres + Flyway
 │   └── src/main/kotlin/com/notifyshare/
-│       ├── auth/      domain · application · adapter
-│       └── shared/    config · web
+│       ├── auth/       domain · application · adapter
+│       ├── friends/    amizade e busca
+│       ├── grants/     compartilhamento, regras, auditoria
+│       ├── events/     ingestão, roteamento, feed, retenção
+│       ├── messages/   conversa (mensagens + timeline)
+│       ├── devices/    token do FCM e presença
+│       ├── push/       porta PushPort + adapter FCM (degrada p/ no-op)
+│       ├── realtime/   WebSocket (RealtimePort) + presença
+│       └── shared/     config · web
 └── mobile/     Kotlin + Jetpack Compose + AGP 9
     └── app/src/main/java/com/notifyshare/
-        ├── data/      local (tokens cifrados) · remote (Retrofit)
-        └── ui/        auth · home · theme
+        ├── data/       local · remote (Retrofit + WebSocket) · repos por feature
+        ├── fcm/        FirebaseMessagingService, canais, publisher
+        ├── notify/     NotificationListenerService, hash do remetente, IngestWorker
+        ├── service/    foreground service, watchdog, boot receiver
+        └── ui/         auth · shell · feed · friends · share · chat · profile · onboarding
 ```
 
 O backend é hexagonal por pacote, organizado por feature, num módulo Gradle só.
-Existem portas onde a troca de implementação é real e datada — envio de e-mail,
-push, armazenamento de mídia. Não existe porta em volta de `JpaRepository`:
-`JpaRepository` já é uma porta, e envolvê-la em outra interface acrescentaria
-arquivos sem desacoplar nada.
+Existem portas onde a troca de implementação é real e datada — push (`PushPort`),
+tempo real (`RealtimePort`). Não existe porta em volta de `JpaRepository`:
+`JpaRepository` já é uma porta.
 
-O mobile segue Clean-lite por feature (`data` / `ui`), com MVVM e `StateFlow`.
-As decisões e as armadilhas do AGP 9 estão no ADR-005 em `DECISOES.md`.
+O mobile segue Clean-lite por feature (`data` / `ui`), com MVVM e `StateFlow`,
+injeção manual no `AppContainer`. O feed é online-first com o servidor como
+fonte da verdade; o FCM entrega a notificação e sinaliza a tela viva
+(`AppEvents`) para recarregar. O WebSocket é só atalho de primeiro plano.
+
+### Firebase / FCM
+
+- `mobile/app/google-services.json` — app de release (`com.notifyshare`).
+- `mobile/app/src/debug/google-services.json` — **stopgap**: o build debug usa
+  `com.notifyshare.debug`. Para o certo, registre esse pacote como um segundo
+  app Android no mesmo projeto Firebase e baixe o `google-services.json`
+  combinado, ou remova o `applicationIdSuffix`.
+- `backend/firebase-service-account.json` — credencial do Admin SDK (fora do git).
+  Em produção, passe o JSON em `FCM_CREDENTIALS` em vez de arquivo.
+- Sem credencial ou com `FCM_ENABLED=false`, o envio de push vira no-op que loga.
 
 ---
 

@@ -2,6 +2,11 @@ spring:
   application:
     name: notify-share-backend
 
+  # Carrega backend/.env (formato KEY=VALUE, igual a .properties) se existir.
+  # E onde ficam SPRING_DATASOURCE_URL, GOOGLE_CLIENT_ID, JWT_SECRET, etc.
+  config:
+    import: optional:file:.env[.properties]
+
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/notifyshare?user=postgres&password=root}
     hikari:
@@ -36,6 +41,23 @@ notifyshare:
     issuer: notify-share
     access-ttl: PT15M
     refresh-ttl: P30D
+
+  google:
+    # Client ID "Web application" do Google Cloud. Vazio = login com Google off.
+    client-id: ${GOOGLE_CLIENT_ID:}
+
+  fcm:
+    # Com enabled=false, ou sem credencial valida, o envio de push vira no-op e
+    # loga em vez de falhar — util em teste e no primeiro boot.
+    enabled: ${FCM_ENABLED:true}
+    # Caminho do JSON da conta de servico. Em producao prefira FCM_CREDENTIALS
+    # com o conteudo do arquivo, para nao precisar de arquivo no disco.
+    credentials-path: ${FCM_CREDENTIALS_PATH:firebase-service-account.json}
+    credentials-json: ${FCM_CREDENTIALS:}
+
+  events:
+    # Historico apagado depois deste tempo. O usuario pode encurtar no app.
+    default-retention: ${EVENT_RETENTION:P7D}
 
 springdoc:
   # Desligue em producao: SWAGGER_ENABLED=false remove a UI e o /v3/api-docs.

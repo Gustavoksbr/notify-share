@@ -31,3 +31,7 @@ desktop.ini
 
 # Logs
 *.log
+
+# especificos para esse projeto
+
+/backend/firebase-service-account.json

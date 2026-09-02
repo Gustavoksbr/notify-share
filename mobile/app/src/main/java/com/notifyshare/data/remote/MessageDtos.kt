@@ -1,0 +1,29 @@
+package com.notifyshare.data.remote
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class TimelineItemDto(
+    /** message | audit */
+    val kind: String,
+    val id: String,
+    /** ISO-8601 */
+    val at: String,
+    val mine: Boolean,
+    val body: String? = null,
+    val readAt: String? = null,
+    /** so em audit: offered | activated | paused | resumed | revoked | rules_changed */
+    val action: String? = null,
+)
+
+@Serializable
+data class MessageDto(
+    val id: String,
+    val mine: Boolean,
+    val body: String,
+    val createdAt: String,
+    val readAt: String? = null,
+)
+
+@Serializable
+data class SendMessageBody(val body: String)

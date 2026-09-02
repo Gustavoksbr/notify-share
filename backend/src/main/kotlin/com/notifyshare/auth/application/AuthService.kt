@@ -1,5 +1,6 @@
 package com.notifyshare.auth.application
 
+import com.notifyshare.auth.adapter.google.GoogleTokenVerifier
 import com.notifyshare.auth.adapter.persistence.RefreshTokenRepository
 import com.notifyshare.auth.adapter.persistence.UserRepository
 import com.notifyshare.auth.adapter.token.JwtService
@@ -31,6 +32,7 @@ class AuthService(
     private val jwt: JwtService,
     private val passwordEncoder: PasswordEncoder,
     private val revoker: RefreshTokenRevoker,
+    private val googleVerifier: GoogleTokenVerifier,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -77,13 +79,63 @@ class AuthService(
         val normalized = identifier.trim().lowercase()
         val user = (if (normalized.contains('@')) users.findByEmail(normalized) else users.findByNickname(normalized))
 
-        // Mesmo erro para usuario inexistente e senha errada, de proposito:
-        // nao entregamos um oraculo de quais nicknames existem.
-        if (user == null || !passwordEncoder.matches(password, user.passwordHash)) {
+        // Conta que so tem Google e o identificador foi um e-mail: vale a dica
+        // (isso revela que o e-mail tem conta, mas e o que Slack/Figma tambem
+        // fazem — o ganho de UX compensa). Por nickname, nao: seguiria oraculo.
+        if (user != null && user.passwordHash == null && user.googleSub != null && normalized.contains('@')) {
+            throw UnauthorizedException("use_google", "Essa conta entra com o Google")
+        }
+
+        // Mesmo erro para usuario inexistente, conta so-Google (por nickname) e
+        // senha errada, de proposito: nao entregamos um oraculo de nicknames.
+        val hash = user?.passwordHash
+        if (user == null || hash == null || !passwordEncoder.matches(password, hash)) {
             throw UnauthorizedException("invalid_credentials", "Nickname ou senha incorretos")
         }
 
         return issueFor(user, familyId = UUID.randomUUID(), deviceLabel = deviceLabel)
+    }
+
+    /**
+     * Login (ou cadastro) com uma conta Google.
+     *
+     * - ja vinculada pelo `sub`  -> entra
+     * - existe conta com o mesmo e-mail -> vincula o Google a ela e entra
+     * - conta nova sem `nickname` -> 409 needs_nickname (o app pergunta e repete)
+     * - conta nova com `nickname` -> cadastra sem senha e entra
+     */
+    @Transactional
+    fun loginWithGoogle(idToken: String, rawNickname: String?, deviceLabel: String?): IssuedTokens {
+        val identity = googleVerifier.verify(idToken)
+        if (!identity.emailVerified) {
+            throw UnauthorizedException("google_email_unverified", "O e-mail dessa conta Google nao esta verificado")
+        }
+        val email = identity.email.trim().lowercase()
+
+        users.findByGoogleSub(identity.sub)?.let {
+            return issueFor(it, UUID.randomUUID(), deviceLabel)
+        }
+
+        users.findByEmail(email)?.let { existing ->
+            existing.googleSub = identity.sub
+            existing.updatedAt = Instant.now()
+            users.save(existing)
+            log.info("Conta @{} vinculada ao Google", existing.nickname)
+            return issueFor(existing, UUID.randomUUID(), deviceLabel)
+        }
+
+        val nickname = rawNickname?.let(Nickname::normalize)
+            ?: throw ConflictException("needs_nickname", email, "nickname")
+        Nickname.validate(nickname)?.let { throw ValidationException("invalid_nickname", it, "nickname") }
+        if (users.existsByNickname(nickname)) {
+            throw ConflictException("nickname_taken", "Esse nickname ja esta em uso", "nickname")
+        }
+
+        val user = users.save(
+            User(nickname = nickname, email = email, passwordHash = null, googleSub = identity.sub)
+        )
+        log.info("Conta criada via Google: @{}", nickname)
+        return issueFor(user, UUID.randomUUID(), deviceLabel)
     }
 
     @Transactional

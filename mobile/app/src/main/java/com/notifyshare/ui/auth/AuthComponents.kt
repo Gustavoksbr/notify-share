@@ -2,34 +2,45 @@ package com.notifyshare.ui.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.notifyshare.auth.GoogleSignInResult
 import com.notifyshare.ui.theme.NotifyIcons
-import androidx.compose.foundation.text.KeyboardOptions
+import kotlinx.coroutines.launch
 
 /** Campo do formulario que sabe se ele mesmo foi o culpado pelo erro do backend. */
 @Composable
@@ -125,6 +136,80 @@ fun PrimaryButton(
             Text(text, style = MaterialTheme.typography.labelLarge)
         }
     }
+}
+
+/** Botao "Continuar com Google": abre o seletor de contas e entrega o token ao ViewModel. */
+@Composable
+fun GoogleSignInButton(viewModel: AuthViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val signIn = remember { com.notifyshare.auth.GoogleSignIn(context) }
+    if (!signIn.available) return
+
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
+    OutlinedButton(
+        onClick = {
+            scope.launch {
+                when (val r = signIn.requestIdToken()) {
+                    is GoogleSignInResult.Token -> viewModel.onGoogleToken(r.idToken)
+                    is GoogleSignInResult.Error -> viewModel.showError(r.message)
+                    GoogleSignInResult.Cancelled -> Unit
+                }
+            }
+        },
+        enabled = !state.googleLoading && !state.loading,
+        shape = RoundedCornerShape(28.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp),
+    ) {
+        if (state.googleLoading) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        } else {
+            Text("Continuar com Google", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** Pergunta o nickname na primeira vez que uma conta Google entra. */
+@Composable
+fun GoogleNicknameDialog(viewModel: AuthViewModel) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    if (!state.needsGoogleNickname) return
+
+    AlertDialog(
+        onDismissRequest = viewModel::cancelGoogleSignup,
+        title = { Text("Escolha um nickname") },
+        text = {
+            Column {
+                Text(
+                    "Primeira vez com ${state.googleEmail ?: "essa conta"}. " +
+                        "O nickname e como as pessoas te encontram.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                AuthTextField(
+                    value = state.googleNickname,
+                    onValueChange = viewModel::onGoogleNicknameChange,
+                    label = "Nickname",
+                    errorField = state.errorField,
+                    fieldName = "nickname",
+                    errorMessage = state.errorMessage,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = viewModel::completeGoogleSignup,
+                enabled = state.googleNickname.isNotBlank() && !state.googleLoading,
+            ) { Text("Criar conta") }
+        },
+        dismissButton = {
+            TextButton(onClick = viewModel::cancelGoogleSignup) { Text("Cancelar") }
+        },
+    )
 }
 
 /** Erro que nao pertence a um campo — credencial invalida, servidor fora do ar. */

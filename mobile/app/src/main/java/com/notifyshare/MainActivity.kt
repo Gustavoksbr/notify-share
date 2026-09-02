@@ -1,33 +1,34 @@
 package com.notifyshare
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.notifyshare.data.AuthRepository
 import com.notifyshare.ui.auth.AuthViewModel
 import com.notifyshare.ui.auth.LoginScreen
 import com.notifyshare.ui.auth.RegisterScreen
-import com.notifyshare.ui.home.HomeScreen
-import com.notifyshare.ui.home.HomeViewModel
+import com.notifyshare.ui.shell.MainShell
 import com.notifyshare.ui.theme.NotifyShareTheme
-
-private object Routes {
-    const val LOGIN = "login"
-    const val REGISTER = "register"
-}
 
 class MainActivity : ComponentActivity() {
 
@@ -35,7 +36,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        val repository = (application as NotifyShareApp).container.authRepository
+        val container = (application as NotifyShareApp).container
+        val openTarget = intent?.getStringExtra(EXTRA_OPEN)
 
         setContent {
             NotifyShareTheme {
@@ -43,42 +45,72 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface,
                 ) {
-                    NotifyShareRoot(repository)
+                    NotifyShareRoot(container, openTarget)
                 }
             }
         }
     }
+
+    companion object {
+        /** "feed" | "chat:<nickname>" | "grants" — de onde a notificacao veio. */
+        const val EXTRA_OPEN = "open"
+    }
 }
 
-/**
- * A sessao decide a tela, nao a navegacao.
- *
- * `hasSession` vem do DataStore, entao qualquer coisa que limpe os tokens —
- * logout, refresh recusado, familia revogada por reuso — leva o usuario de
- * volta ao login sozinha, sem ninguem precisar chamar navigate.
- */
-@Composable
-private fun NotifyShareRoot(repository: AuthRepository) {
-    val hasSession by repository.hasSession.collectAsStateWithLifecycle(initialValue = false)
+private object Routes {
+    const val LOGIN = "login"
+    const val REGISTER = "register"
+}
 
-    if (hasSession) {
-        val homeViewModel: HomeViewModel = viewModel(
-            factory = remember(repository) { HomeViewModel.Factory(repository) }
+@Composable
+private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
+    val hasSession by container.authRepository.hasSession.collectAsStateWithLifecycle(initialValue = false)
+    val context = LocalContext.current
+    // "Adicionar conta": mostra o login mesmo com uma sessao ativa.
+    var addingAccount by remember { mutableStateOf(false) }
+
+    // Android 13+: pede permissao de notificacao uma vez, ja logado.
+    var askedForNotifications by remember { mutableStateOf(false) }
+    val notifPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    LaunchedEffect(hasSession) {
+        if (hasSession && !askedForNotifications && Build.VERSION.SDK_INT >= 33) {
+            askedForNotifications = true
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    if (hasSession && !addingAccount) {
+        MainShell(
+            container = container,
+            openTarget = openTarget,
+            onAddAccount = { addingAccount = true },
         )
-        HomeScreen(homeViewModel)
         return
     }
 
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel(
-        factory = remember(repository) { AuthViewModel.Factory(repository) }
+        factory = remember(container) { AuthViewModel.Factory(container.authRepository) },
     )
+    val authState by authViewModel.state.collectAsStateWithLifecycle()
+
+    // Adicionar conta: ao autenticar, recria a Activity para tudo reler do zero
+    // (mesmo caminho da troca de conta). No login normal, hasSession ja resolve.
+    LaunchedEffect(authState.authComplete) {
+        if (authState.authComplete && addingAccount) {
+            addingAccount = false
+            (context as? android.app.Activity)?.recreate()
+        }
+    }
 
     NavHost(navController = navController, startDestination = Routes.LOGIN) {
         composable(Routes.LOGIN) {
             LoginScreen(
                 viewModel = authViewModel,
                 onGoToRegister = { navController.navigate(Routes.REGISTER) },
+                onCancel = if (addingAccount) ({ addingAccount = false }) else null,
             )
         }
         composable(Routes.REGISTER) {

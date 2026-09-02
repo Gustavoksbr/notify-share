@@ -23,8 +23,13 @@ class User(
     @Column(name = "email", nullable = false, length = 254)
     var email: String,
 
-    @Column(name = "password_hash", nullable = false, length = 255)
-    var passwordHash: String,
+    /** Nulo em conta criada so pelo Google (sem senha). */
+    @Column(name = "password_hash", length = 255)
+    var passwordHash: String? = null,
+
+    /** `sub` do Google, quando a conta esta vinculada ao login com Google. */
+    @Column(name = "google_sub", length = 255)
+    var googleSub: String? = null,
 
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),

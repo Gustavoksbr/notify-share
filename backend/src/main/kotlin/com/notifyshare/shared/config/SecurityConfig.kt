@@ -37,9 +37,14 @@ class SecurityConfig(private val jwtFilter: JwtAuthenticationFilter) {
                 //
                 // /auth/logout-all continua autenticado: derrubar TODAS as sessoes
                 // e uma acao sobre a conta inteira, nao sobre um aparelho.
-                it.requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout")
+                it.requestMatchers(
+                    "/auth/register", "/auth/login", "/auth/google", "/auth/refresh", "/auth/logout",
+                )
                     .permitAll()
                     .requestMatchers("/actuator/health").permitAll()
+                    // O handshake do WebSocket se autentica sozinho pelo ?token=
+                    // (WsHandshakeInterceptor). Aqui so liberamos a rota do filtro HTTP.
+                    .requestMatchers("/ws").permitAll()
                     // Swagger. Em producao isso sai do ar por SWAGGER_ENABLED=false,
                     // e ai estas rotas simplesmente nao existem.
                     .requestMatchers("/swagger", "/swagger-ui/**", "/v3/api-docs/**").permitAll()

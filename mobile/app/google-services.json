@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "98742394505",
+    "project_id": "notify-share",
+    "storage_bucket": "notify-share.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:98742394505:android:580f21b1b7f8931aafb058",
+        "android_client_info": {
+          "package_name": "com.notifyshare"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJ2rhx87DhTBqvXIOY9x_ebmSvtLST6fc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:98742394505:android:5754f431ab8d8217afb058",
+        "android_client_info": {
+          "package_name": "com.notifyshare.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJ2rhx87DhTBqvXIOY9x_ebmSvtLST6fc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

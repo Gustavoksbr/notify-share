@@ -20,12 +20,23 @@ data class AuthUiState(
     val errorMessage: String? = null,
     /** Nome do campo que o backend apontou, para destacar o certo no formulario. */
     val errorField: String? = null,
+    /** Virou true logo apos qualquer autenticacao bem-sucedida. */
+    val authComplete: Boolean = false,
+
+    // --- login com Google ---
+    val googleLoading: Boolean = false,
+    /** Preenchido quando o backend pede um nickname (primeira vez desta conta Google). */
+    val googleEmail: String? = null,
+    val googleNickname: String = "",
+    val pendingGoogleToken: String? = null,
 ) {
     val canSubmitLogin: Boolean
         get() = identifier.isNotBlank() && password.isNotBlank() && !loading
 
     val canSubmitRegister: Boolean
         get() = nickname.isNotBlank() && email.isNotBlank() && password.isNotBlank() && !loading
+
+    val needsGoogleNickname: Boolean get() = pendingGoogleToken != null
 }
 
 class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
@@ -50,6 +61,53 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         )
     }
 
+    // --- login com Google -------------------------------------------------
+
+    fun showError(message: String) = _state.update { it.copy(errorMessage = message) }
+
+    /** Recebe o ID token do seletor de contas. */
+    fun onGoogleToken(idToken: String) {
+        if (_state.value.googleLoading) return
+        _state.update { it.copy(googleLoading = true, errorMessage = null, errorField = null) }
+        viewModelScope.launch {
+            when (val result = repository.loginWithGoogle(idToken)) {
+                is ApiResult.Ok -> _state.update { it.copy(googleLoading = false, authComplete = true) }
+                is ApiResult.Failure -> _state.update {
+                    if (result.code == "needs_nickname") {
+                        // message carrega o e-mail da conta Google
+                        it.copy(googleLoading = false, pendingGoogleToken = idToken, googleEmail = result.message)
+                    } else {
+                        it.copy(googleLoading = false, errorMessage = result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    fun onGoogleNicknameChange(value: String) =
+        _state.update { it.copy(googleNickname = value.lowercase(), errorMessage = null, errorField = null) }
+
+    fun completeGoogleSignup() {
+        val token = _state.value.pendingGoogleToken ?: return
+        val nickname = _state.value.googleNickname.trim()
+        if (nickname.isBlank() || _state.value.googleLoading) return
+        _state.update { it.copy(googleLoading = true, errorMessage = null, errorField = null) }
+        viewModelScope.launch {
+            when (val result = repository.loginWithGoogle(token, nickname)) {
+                is ApiResult.Ok -> _state.update {
+                    it.copy(googleLoading = false, pendingGoogleToken = null, googleEmail = null, authComplete = true)
+                }
+                is ApiResult.Failure -> _state.update {
+                    it.copy(googleLoading = false, errorMessage = result.message, errorField = result.field)
+                }
+            }
+        }
+    }
+
+    fun cancelGoogleSignup() = _state.update {
+        it.copy(pendingGoogleToken = null, googleEmail = null, googleNickname = "", errorMessage = null)
+    }
+
     /** Limpa o formulario ao trocar de tela, para a senha nao sobrar na memoria. */
     fun resetForm() {
         _state.value = AuthUiState()
@@ -61,9 +119,9 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         viewModelScope.launch {
             when (val result = action()) {
                 is ApiResult.Ok -> {
-                    // Nao mexemos no estado: a navegacao reage a hasSession,
-                    // que o repositorio ja atualizou ao guardar os tokens.
-                    _state.update { it.copy(loading = false) }
+                    // A navegacao normal reage a hasSession; authComplete cobre o
+                    // caso "adicionar conta" (hasSession ja era true).
+                    _state.update { it.copy(loading = false, authComplete = true) }
                 }
                 is ApiResult.Failure -> _state.update {
                     it.copy(

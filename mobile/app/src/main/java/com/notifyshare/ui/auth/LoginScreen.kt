@@ -30,6 +30,7 @@ fun LoginScreen(
     viewModel: AuthViewModel,
     onGoToRegister: () -> Unit,
     modifier: Modifier = Modifier,
+    onCancel: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -41,7 +42,15 @@ fun LoginScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp),
     ) {
-        Spacer(Modifier.height(72.dp))
+        if (onCancel != null) {
+            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = onCancel) {
+                Text("Cancelar", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(24.dp))
+        } else {
+            Spacer(Modifier.height(72.dp))
+        }
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -49,7 +58,10 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             BrandMark()
-            Text("Notify Share", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                if (onCancel != null) "Adicionar conta" else "Notify Share",
+                style = MaterialTheme.typography.headlineMedium,
+            )
             Text(
                 text = "Escolha o que o seu celular avisa\ne para quem",
                 style = MaterialTheme.typography.bodyMedium,
@@ -92,6 +104,16 @@ fun LoginScreen(
                 loading = state.loading,
             )
 
+            Text(
+                "ou",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+
+            GoogleSignInButton(viewModel)
+
             TextButton(
                 onClick = {
                     viewModel.resetForm()
@@ -99,9 +121,11 @@ fun LoginScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Criar conta", color = MaterialTheme.colorScheme.primary)
+                Text("Criar conta com e-mail e senha", color = MaterialTheme.colorScheme.primary)
             }
         }
+
+        GoogleNicknameDialog(viewModel)
 
         Spacer(Modifier.height(32.dp))
 

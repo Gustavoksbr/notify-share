@@ -4,6 +4,7 @@ import com.notifyshare.auth.application.AuthService
 import com.notifyshare.auth.application.IssuedTokens
 import com.notifyshare.auth.domain.User
 import com.notifyshare.shared.config.OpenApiConfig.Companion.BEARER_SCHEME
+import com.notifyshare.shared.web.AuthenticatedUser
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -73,6 +74,23 @@ data class RefreshRequest(
     val deviceLabel: String? = null,
 )
 
+@Schema(description = "Login ou cadastro com uma conta Google")
+data class GoogleLoginRequest(
+    @field:NotBlank
+    @field:Schema(description = "ID token do Google obtido no app (Credential Manager).")
+    val idToken: String = "",
+
+    @field:Schema(
+        description = "So no primeiro login dessa conta Google: o nickname escolhido. " +
+            "Se a conta ainda nao existe e vier vazio, a resposta e 409 needs_nickname.",
+        example = "gustavoksbr",
+    )
+    val nickname: String? = null,
+
+    @field:Schema(example = "Redmi 12C")
+    val deviceLabel: String? = null,
+)
+
 data class LogoutRequest(
     @field:NotBlank
     @field:Schema(description = "O refreshToken da sessao que voce quer encerrar.")
@@ -85,6 +103,8 @@ data class MeResponse(
     @field:Schema(example = "gustavoksbr") val nickname: String,
     @field:Schema(example = "voce@exemplo.com") val email: String,
     val createdAt: Instant,
+    @field:Schema(description = "Conta vinculada ao login com Google.") val google: Boolean = false,
+    @field:Schema(description = "Conta tem senha (da para entrar sem o Google).") val hasPassword: Boolean = true,
 )
 
 @Schema(description = "Par de tokens emitido")
@@ -101,7 +121,14 @@ data class TokenResponse(
     val user: MeResponse,
 )
 
-private fun User.toMe() = MeResponse(id, nickname, email, createdAt)
+private fun User.toMe() = MeResponse(
+    id = id,
+    nickname = nickname,
+    email = email,
+    createdAt = createdAt,
+    google = googleSub != null,
+    hasPassword = passwordHash != null,
+)
 
 private fun IssuedTokens.toResponse() =
     TokenResponse(accessToken, refreshToken, expiresInSeconds, user.toMe())
@@ -141,6 +168,21 @@ class AuthController(private val authService: AuthService) {
     )
     fun login(@Valid @RequestBody body: LoginRequest): TokenResponse =
         authService.login(body.identifier, body.password, body.deviceLabel).toResponse()
+
+    @PostMapping("/google")
+    @Operation(
+        summary = "Entra ou cadastra com uma conta Google",
+        description = "Valida o ID token com o Google. Se for a primeira vez dessa conta e nao " +
+            "vier `nickname`, devolve 409 com code=needs_nickname e o e-mail em `message` — " +
+            "o app pergunta o nickname e repete a chamada.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Autenticado"),
+        ApiResponse(responseCode = "401", description = "code=invalid_google_token, google_audience_mismatch..."),
+        ApiResponse(responseCode = "409", description = "code=needs_nickname (message=e-mail) ou nickname_taken"),
+    )
+    fun google(@Valid @RequestBody body: GoogleLoginRequest): TokenResponse =
+        authService.loginWithGoogle(body.idToken, body.nickname, body.deviceLabel).toResponse()
 
     @PostMapping("/refresh")
     @Operation(

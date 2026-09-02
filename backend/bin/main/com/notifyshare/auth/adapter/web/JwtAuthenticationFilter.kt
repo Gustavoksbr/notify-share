@@ -1,6 +1,7 @@
 package com.notifyshare.auth.adapter.web
 
 import com.notifyshare.auth.adapter.token.JwtService
+import com.notifyshare.shared.web.AuthenticatedUser
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -10,9 +11,6 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 import java.util.UUID
-
-/** Identidade autenticada disponivel nos controllers via @AuthenticationPrincipal. */
-data class AuthenticatedUser(val id: UUID, val nickname: String)
 
 @Component
 class JwtAuthenticationFilter(private val jwt: JwtService) : OncePerRequestFilter() {

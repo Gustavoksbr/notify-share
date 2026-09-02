@@ -97,6 +97,16 @@ fun RegisterScreen(
                 loading = state.loading,
             )
 
+            Text(
+                "ou",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+
+            GoogleSignInButton(viewModel)
+
             TextButton(
                 onClick = {
                     viewModel.resetForm()
@@ -107,6 +117,8 @@ fun RegisterScreen(
                 Text("Ja tenho conta", color = MaterialTheme.colorScheme.primary)
             }
         }
+
+        GoogleNicknameDialog(viewModel)
 
         Spacer(Modifier.height(32.dp))
     }
