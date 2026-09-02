@@ -7,6 +7,9 @@
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# Saida de compilacao do Eclipse/JDT
+bin/
+
 # Android
 local.properties
 *.apk
