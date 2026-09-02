@@ -99,7 +99,9 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
             return@Column
         }
 
-        val add: (String) -> Unit = { pkg -> vm.addApp(pkg); onBack() }
+        // adiciona e mantém a tela aberta: dá pra escolher vários de uma vez.
+        // O app escolhido sai da lista (passa a "já adicionado") como confirmação.
+        val add: (String) -> Unit = { pkg -> vm.addApp(pkg) }
 
         LazyColumn {
             val recentShown = recentEntries.filter { matchesQuery(it.second) }

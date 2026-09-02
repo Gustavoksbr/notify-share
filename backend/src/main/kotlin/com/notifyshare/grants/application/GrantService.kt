@@ -141,6 +141,14 @@ class GrantService(
         pushGrant(g, to = g.counterpart(userId), action = "revoked", by = userId)
     }
 
+    /**
+     * Remove todo compartilhamento entre dois usuarios. Chamado quando eles
+     * deixam de ser amigos (ou um pedido de amizade com intencao de
+     * compartilhar e cancelado): sem amizade, nenhum grant faz sentido.
+     */
+    @Transactional
+    fun clearBetween(userA: UUID, userB: UUID): Int = grants.deleteAllBetween(userA, userB)
+
     /** Chamado pelo GrantRuleService quando as regras mudam. */
     @Transactional
     fun recordRulesChanged(grantId: UUID, actorId: UUID, detail: String?) {

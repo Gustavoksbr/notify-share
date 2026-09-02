@@ -1,5 +1,6 @@
 package com.notifyshare.grants.application
 
+import com.notifyshare.friends.application.FriendLinkClearedEvent
 import com.notifyshare.friends.application.FriendshipAcceptedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -33,5 +34,12 @@ class GrantAutoCreator(private val grants: GrantService) {
             runCatching { grants.request(event.requesterId, event.addresseeNickname) }
                 .onFailure { log.info("auto-request de @{} nao criado: {}", event.addresseeNickname, it.message) }
         }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun onFriendLinkCleared(event: FriendLinkClearedEvent) {
+        val removed = grants.clearBetween(event.userAId, event.userBId)
+        if (removed > 0) log.info("{} grant(s) removido(s) ao desfazer o vinculo de amizade", removed)
     }
 }

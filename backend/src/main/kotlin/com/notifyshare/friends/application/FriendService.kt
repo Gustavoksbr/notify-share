@@ -156,6 +156,19 @@ class FriendService(
         return SearchResult(target.nickname, relation, 0)
     }
 
+    /** O solicitante cancela o proprio pedido pendente. Leva junto qualquer
+     *  grant/pedido de compartilhamento que ja exista entre os dois. */
+    @Transactional
+    fun cancelRequest(requesterId: UUID, friendshipId: UUID) {
+        val f = friendships.findById(friendshipId)
+            .orElseThrow { NotFoundException("request_not_found", "Pedido nao encontrado") }
+        if (f.requesterId != requesterId || f.status != Friendship.PENDING) {
+            throw ForbiddenException("not_your_request", "Esse pedido nao e seu para cancelar")
+        }
+        friendships.delete(f)
+        eventPublisher.publishEvent(FriendLinkClearedEvent(f.requesterId, f.addresseeId))
+    }
+
     @Transactional
     fun respond(userId: UUID, friendshipId: UUID, accept: Boolean) {
         val f = friendships.findById(friendshipId)
@@ -189,6 +202,9 @@ class FriendService(
     @Transactional
     fun remove(userId: UUID, otherNickname: String) {
         val other = users.findByNickname(otherNickname.trim().lowercase().removePrefix("@")) ?: return
-        friendships.findBetween(userId, other.id)?.let { friendships.delete(it) }
+        val link = friendships.findBetween(userId, other.id) ?: return
+        friendships.delete(link)
+        // sem amizade nao ha compartilhamento: derruba os grants entre os dois.
+        eventPublisher.publishEvent(FriendLinkClearedEvent(userId, other.id))
     }
 }

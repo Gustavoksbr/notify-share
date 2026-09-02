@@ -79,6 +79,15 @@ class FriendController(private val friends: FriendService) {
     fun decline(@AuthenticationPrincipal me: AuthenticatedUser, @PathVariable id: UUID) =
         friends.respond(me.id, id, accept = false)
 
+    @PostMapping("/friends/requests/{id}/cancel")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(
+        summary = "Cancela um pedido que voce enviou",
+        description = "Leva junto qualquer pedido de compartilhamento que tenha vindo no mesmo pedido de amizade.",
+    )
+    fun cancel(@AuthenticationPrincipal me: AuthenticatedUser, @PathVariable id: UUID) =
+        friends.cancelRequest(me.id, id)
+
     @DeleteMapping("/friends/{nickname}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Desfaz a amizade")

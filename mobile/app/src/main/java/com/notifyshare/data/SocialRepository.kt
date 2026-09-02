@@ -61,6 +61,9 @@ class SocialRepository(
 
     suspend fun declineFriend(id: String): ApiResult<Unit> = apiCall(json) { api.declineFriend(id) }
 
+    suspend fun cancelFriendRequest(id: String): ApiResult<Unit> =
+        apiCall(json) { api.cancelFriendRequest(id) }
+
     suspend fun removeFriend(nickname: String): ApiResult<Unit> = apiCall(json) { api.removeFriend(nickname) }
 
     // --- perfil de outra pessoa / bloqueio ----------------------

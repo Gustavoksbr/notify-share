@@ -65,6 +65,9 @@ interface NotifyShareApi {
     @POST("friends/requests/{id}/decline")
     suspend fun declineFriend(@Path("id") id: String): Response<Unit>
 
+    @POST("friends/requests/{id}/cancel")
+    suspend fun cancelFriendRequest(@Path("id") id: String): Response<Unit>
+
     @DELETE("friends/{nickname}")
     suspend fun removeFriend(@Path("nickname") nickname: String): Response<Unit>
 

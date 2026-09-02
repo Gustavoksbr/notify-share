@@ -59,6 +59,7 @@ data class FriendsUiState(
     val searching: Boolean = false,
     val searched: Boolean = false,
     val incoming: List<FriendRequestDto> = emptyList(),
+    val outgoing: List<FriendRequestDto> = emptyList(),
     val friends: List<FriendDto> = emptyList(),
     val error: String? = null,
     val failedToLoad: Boolean = false,
@@ -99,6 +100,7 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
                 refreshing = false,
                 friends = friendsOk?.value ?: _state.value.friends,
                 incoming = (requests as? ApiResult.Ok)?.value?.incoming ?: _state.value.incoming,
+                outgoing = (requests as? ApiResult.Ok)?.value?.outgoing ?: _state.value.outgoing,
                 error = (friends as? ApiResult.Failure)?.message,
                 // "falhou ao carregar" e diferente de "nao tem amigos": so mostra
                 // o estado vazio quando o servidor respondeu de fato.
@@ -138,6 +140,11 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
 
     fun accept(id: String) = launchBusy("accept:$id") { repo.acceptFriend(id); load(silent = true) }
     fun decline(id: String) = launchBusy("decline:$id") { repo.declineFriend(id); load(silent = true) }
+    fun cancel(id: String) = launchBusy("cancel:$id") {
+        repo.cancelFriendRequest(id)
+        onQuery(_state.value.query)
+        load(silent = true)
+    }
 
     private fun launchBusy(key: String, block: suspend () -> Unit) = viewModelScope.launch {
         _state.update { it.copy(busy = it.busy + key) }
@@ -205,17 +212,46 @@ fun FriendsScreen(
             if (state.results.isNotEmpty()) {
                 item { SectionLabel("Resultado da busca") }
                 items(state.results, key = { "search_${it.nickname}" }) { r ->
+                    val outgoingId = state.outgoing.firstOrNull { it.nickname == r.nickname }?.id
                     SearchRow(
                         r,
-                        busy = "add:${r.nickname}" in state.busy,
+                        busy = "add:${r.nickname}" in state.busy ||
+                            (outgoingId != null && "cancel:$outgoingId" in state.busy),
                         // "none" abre o diálogo com as opções de já compartilhar;
                         // "request_received" só aceita (a intenção é de quem pediu).
                         onAdd = {
                             if (r.relation == "request_received") vm.add(r.nickname)
                             else addTarget = r.nickname
                         },
+                        onCancel = outgoingId?.let { { vm.cancel(it) } },
                         onOpen = { onOpenProfile(r.nickname) },
                     )
+                }
+            }
+
+            if (state.outgoing.isNotEmpty()) {
+                item { SectionLabel("Pedidos enviados · ${state.outgoing.size}") }
+                items(state.outgoing, key = { "out_${it.id}" }) { req ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                    ) {
+                        Avatar(req.nickname, size = 40)
+                        Column(Modifier.weight(1f)) {
+                            Text("@${req.nickname}", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Aguardando resposta",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NotifyShareColors.muted,
+                            )
+                        }
+                        InlineActionButton(
+                            "Cancelar",
+                            { vm.cancel(req.id) },
+                            loading = "cancel:${req.id}" in state.busy,
+                        )
+                    }
                 }
             }
 
@@ -328,7 +364,13 @@ private fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Uni
 }
 
 @Composable
-private fun SearchRow(r: SearchResultDto, busy: Boolean, onAdd: () -> Unit, onOpen: () -> Unit) {
+private fun SearchRow(
+    r: SearchResultDto,
+    busy: Boolean,
+    onAdd: () -> Unit,
+    onCancel: (() -> Unit)?,
+    onOpen: () -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -353,12 +395,14 @@ private fun SearchRow(r: SearchResultDto, busy: Boolean, onAdd: () -> Unit, onOp
                 color = NotifyShareColors.muted,
             )
         }
-        if (r.relation == "none" || r.relation == "request_received") {
-            PillButton(
+        when {
+            r.relation == "none" || r.relation == "request_received" -> PillButton(
                 if (r.relation == "request_received") "Aceitar" else "Adicionar",
                 onAdd,
                 loading = busy,
             )
+            r.relation == "request_sent" && onCancel != null ->
+                InlineActionButton("Cancelar", onCancel, loading = busy)
         }
     }
 }

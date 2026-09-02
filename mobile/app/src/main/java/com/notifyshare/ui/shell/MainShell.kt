@@ -248,7 +248,16 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
             composable("apps/{grantId}/{nickname}") { entry ->
                 val grantId = entry.arguments?.getString("grantId").orEmpty()
                 val nick = entry.arguments?.getString("nickname").orEmpty()
-                val vm: RulesViewModel = viewModel(factory = RulesViewModelFactory(container, grantId))
+                // O seletor DEVE compartilhar o mesmo RulesViewModel da tela de
+                // regras (de onde ele sempre é aberto). Sem isto, `addApp` mexia
+                // numa instância paralela e o app escolhido nunca aparecia lá —
+                // ele "sumia" da lista do seletor (virava "já adicionado") e nada
+                // acontecia ao voltar.
+                val rulesEntry = remember(entry) { nav.getBackStackEntry("rules/$grantId/$nick") }
+                val vm: RulesViewModel = viewModel(
+                    viewModelStoreOwner = rulesEntry,
+                    factory = RulesViewModelFactory(container, grantId),
+                )
                 AppPickerScreen(vm = vm, nickname = nick, onBack = { nav.popBackStack() })
             }
             composable("notify-rules/{grantId}/{nickname}") { entry ->

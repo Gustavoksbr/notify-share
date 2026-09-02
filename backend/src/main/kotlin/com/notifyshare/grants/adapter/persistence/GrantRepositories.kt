@@ -6,6 +6,7 @@ import com.notifyshare.grants.domain.GrantRule
 import com.notifyshare.grants.domain.GrantRuleSender
 import com.notifyshare.grants.domain.RecipientAppMute
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
@@ -26,6 +27,18 @@ interface GrantRepository : JpaRepository<Grant, UUID> {
         """
     )
     fun findAllBetween(@Param("a") a: UUID, @Param("b") b: UUID): List<Grant>
+
+    /** Apaga todo grant entre os dois (qualquer sentido/estado). O FK cascateia
+     *  regras, remetentes, mutes, auditoria e entregas. */
+    @Modifying
+    @Query(
+        """
+        delete from Grant g
+        where (g.sharerId = :a and g.recipientId = :b)
+           or (g.sharerId = :b and g.recipientId = :a)
+        """
+    )
+    fun deleteAllBetween(@Param("a") a: UUID, @Param("b") b: UUID): Int
 
     @Query(
         """

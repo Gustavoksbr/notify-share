@@ -61,6 +61,13 @@ class SocialFlowTest {
         return Res(result.status.value(), result.responseBody ?: "")
     }
 
+    private fun delete(path: String, token: String): Res {
+        val result = client.delete().uri(path)
+            .header("Authorization", "Bearer $token")
+            .exchange().expectBody(String::class.java).returnResult()
+        return Res(result.status.value(), result.responseBody ?: "")
+    }
+
     private fun field(body: String, name: String): String =
         Regex("\"$name\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1)
             ?: error("campo $name ausente em: $body")
@@ -113,6 +120,39 @@ class SocialFlowTest {
         assertTrue(pendingA.contains("c3req_b") && pendingA.contains("\"outgoing\""), pendingA)
         // e do lado de B aparece como recebido
         assertTrue(get("/grants/pending", b).body.contains("c3req_a"), get("/grants/pending", b).body)
+    }
+
+    @Test
+    fun `cancelar pedido de amizade leva junto a intencao de compartilhar`() {
+        val a = register("c3canc_a"); val b = register("c3canc_b")
+
+        assertEquals(
+            200,
+            post("/friends/requests", a, """{"nickname":"c3canc_b","alsoRequestShare":true}""").status,
+        )
+        // o proprio B nao pode cancelar o pedido de A
+        val reqId = field(get("/friends/requests", b).body, "id")
+        assertEquals(403, post("/friends/requests/$reqId/cancel", b).status)
+
+        // A cancela o proprio pedido
+        assertEquals(204, post("/friends/requests/$reqId/cancel", a).status)
+
+        // sumiu dos pedidos e nenhum grant nasce se B "aceitar" (nem da mais)
+        assertFalse(get("/friends/requests", b).body.contains("c3canc_a"), get("/friends/requests", b).body)
+        assertEquals(404, post("/friends/requests/$reqId/accept", b).status)
+    }
+
+    @Test
+    fun `desfazer amizade derruba os grants entre os dois`() {
+        val a = register("unf_a"); val b = register("unf_b")
+        befriend(a, b, "unf_b")
+        assertEquals(200, post("/grants/offers", a, """{"nickname":"unf_b"}""").status)
+        assertTrue(get("/grants/pending", b).body.contains("unf_a"))
+
+        assertEquals(204, delete("/friends/unf_b", a).status)
+
+        assertEquals("""{"incoming":[],"outgoing":[]}""", get("/grants/pending", a).body)
+        assertEquals("""{"incoming":[],"outgoing":[]}""", get("/grants/pending", b).body)
     }
 
     @Test
