@@ -1,0 +1,43 @@
+# Perfil de producao. Ative com SPRING_PROFILES_ACTIVE=prod.
+#
+# Banco: Supabase. Use a string do "Session pooler" (porta 5432 do host
+# ...pooler.supabase.com) — com ela o pool fixo do HikariCP funciona, o Flyway
+# consegue o advisory lock de sessao e os prepared statements do driver valem.
+#
+# Formato esperado em DATABASE_URL:
+#   jdbc:postgresql://aws-0-<regiao>.pooler.supabase.com:5432/postgres
+#     ?user=postgres.<project-ref>&password=<senha>&sslmode=require
+#
+# sslmode=require e obrigatorio (o Supabase so aceita TLS).
+# prepareThreshold=0 NAO e necessario no session pooler; so no transaction
+#   pooler (porta 6543), que nao suporta prepared statements.
+
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    hikari:
+      # Free tier tem teto baixo de conexoes. Deixe folga para o pooler.
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+      # Menor que o server_idle_timeout do pooler para nao usar conexao morta.
+      max-lifetime: 1200000
+
+  # Se um dia trocar para o transaction pooler (porta 6543), descomente:
+  #   flyway.postgresql.transactional-lock: false   (o lock de sessao nao funciona la)
+  # e acrescente prepareThreshold=0 na DATABASE_URL.
+
+# Sem Swagger em producao.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    com.notifyshare: INFO
+    org.flywaydb: INFO
+
+# A Render (e a maioria dos PaaS) injeta a porta em PORT e espera o app ouvir
+# nela. Fora da Render, PORT nao existe e cai no 8080.
+server:
+  port: ${PORT:8080}

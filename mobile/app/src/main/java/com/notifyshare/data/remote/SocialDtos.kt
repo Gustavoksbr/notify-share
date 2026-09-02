@@ -36,6 +36,8 @@ data class UserProfileDto(
     val blockedByMe: Boolean = false,
     val sharingWithThem: List<GrantDto> = emptyList(),
     val receivingFromThem: List<GrantDto> = emptyList(),
+    /** pedidos/ofertas pendentes que eu iniciei — dá pra cancelar */
+    val outgoingPending: List<GrantDto> = emptyList(),
 )
 
 @Serializable

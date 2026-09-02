@@ -208,7 +208,11 @@ private fun RuleCard(
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            com.notifyshare.ui.common.AppIcon(rule.packageName, size = 32.dp)
             Text(
                 friendlyPackage(rule.packageName),
                 style = MaterialTheme.typography.titleMedium,

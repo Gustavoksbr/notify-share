@@ -1,0 +1,38 @@
+# Blueprint da Render. Alternativa a configurar tudo na tela "New Web Service":
+# em vez do formulario, New > Blueprint apontando para este arquivo.
+#
+# Banco = Supabase (nao e o Postgres da Render), entao DATABASE_URL e preenchido
+# a mao no dashboard (sync: false).
+
+services:
+  - type: web
+    name: notify-share
+    runtime: docker
+    repo: https://github.com/Gustavoksbr/notify-share
+    branch: main
+    rootDir: backend               # monorepo: build a partir de /backend
+    dockerfilePath: ./Dockerfile   # relativo ao rootDir
+    region: oregon                 # mesma regiao do Supabase (AWS us-west-2)
+    plan: free
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # Supabase — Session pooler (host ...pooler.supabase.com, PORTA 5432),
+      # com &sslmode=require. NAO use a 6543 (transaction pooler) nem a conexao
+      # direta (db.<ref>.supabase.co e IPv6-only, a Render nao alcanca).
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      # JSON da conta de servico do Firebase (uma linha). Ou FCM_ENABLED=false
+      # no primeiro deploy para simplificar.
+      - key: FCM_CREDENTIALS
+        sync: false
+      # A propria URL publica (https://notify-share.onrender.com) — o self-ping
+      # bate nela a cada 10 min para a instancia free nao hibernar.
+      - key: API_PRODUCTION_URL
+        value: https://notify-share.onrender.com

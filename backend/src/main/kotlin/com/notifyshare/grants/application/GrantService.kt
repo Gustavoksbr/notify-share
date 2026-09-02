@@ -96,14 +96,18 @@ class GrantService(
         return persistAndNotify(g, userId, g.counterpart(userId), action = "activated")
     }
 
+    /**
+     * Recusa (pelo lado que espera) ou cancela (por quem iniciou) um pedido
+     * pendente. Nos dois casos a linha some — nao guardamos "recusado".
+     */
     @Transactional
     fun decline(userId: UUID, grantId: UUID) {
         val g = load(grantId)
-        val waitingForMe = (g.status == Grant.OFFERED && userId == g.recipientId) ||
-            (g.status == Grant.REQUESTED && userId == g.sharerId)
-        if (!waitingForMe) throw ForbiddenException("cannot_decline", "Esse pedido nao esta esperando por voce")
+        if (!g.isPending) throw ConflictException("not_pending", "Esse compartilhamento nao esta pendente")
+        if (!g.involves(userId)) throw ForbiddenException("not_in_grant", "Voce nao faz parte deste pedido")
         clearRules(g.id)
         grants.delete(g)
+        pushGrant(g, to = g.counterpart(userId), action = "cancelled", by = userId)
     }
 
     @Transactional

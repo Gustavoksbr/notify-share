@@ -129,18 +129,18 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
 private fun AppRow(entry: AppEntry, subtitle: String? = null, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 22.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 10.dp),
     ) {
+        com.notifyshare.ui.common.AppIcon(entry.packageName, size = 38.dp)
         Column(Modifier.weight(1f)) {
             Text(entry.label, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                subtitle ?: entry.packageName,
-                style = MaterialTheme.typography.labelSmall,
-                color = NotifyShareColors.muted,
-            )
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, color = NotifyShareColors.muted)
+            }
         }
         Icon(NotifyIcons.Plus, "Adicionar", tint = MaterialTheme.colorScheme.primary)
     }

@@ -1,6 +1,7 @@
 package com.notifyshare.ui.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -69,7 +70,12 @@ class UserProfileViewModel(
         viewModelScope.launch {
             when (val r = repo.userProfile(nickname)) {
                 is ApiResult.Ok ->
-                    _state.value = UserProfileUiState(loading = false, profile = r.value)
+                    // preserva o aviso — recarregar nao pode apagar o "pedido enviado"
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        profile = r.value,
+                        failedToLoad = false,
+                    )
                 is ApiResult.Failure ->
                     _state.value = _state.value.copy(
                         loading = false,
@@ -125,6 +131,17 @@ class UserProfileViewModel(
         load()
     }
 
+    /** Cancela um pedido/oferta pendente que eu iniciei. */
+    fun cancelPending(grantId: String) = viewModelScope.launch {
+        _state.value = _state.value.copy(working = true, notice = null)
+        val r = repo.declineGrant(grantId)
+        _state.value = _state.value.copy(
+            working = false,
+            notice = if (r is ApiResult.Failure) r.message else "Pedido cancelado.",
+        )
+        load()
+    }
+
     fun dismissNotice() { _state.value = _state.value.copy(notice = null) }
 }
 
@@ -169,15 +186,26 @@ fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
                     // futuramente: foto de perfil salva pelo usuário
 
                     state.notice?.let { msg ->
-                        Text(
-                            msg,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .clickable { vm.dismissNotice() }
                                 .padding(horizontal = 22.dp, vertical = 10.dp),
-                        )
+                        ) {
+                            Text(
+                                msg,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                "OK",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
 
                     GrantSection("Você compartilha com @${p.nickname}", p.sharingWithThem)
@@ -186,15 +214,28 @@ fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
                     if (p.friend && !p.blockedByMe) {
                         Spacer(Modifier.height(20.dp))
                         SectionLabel("Compartilhamento")
-                        if (p.receivingFromThem.isEmpty()) {
-                            OutlinedButton(
+
+                        val pendingRequest = p.outgoingPending.firstOrNull { it.status == "requested_by_recipient" }
+                        val pendingOffer = p.outgoingPending.firstOrNull { it.status == "offered_by_sharer" }
+
+                        when {
+                            pendingRequest != null -> PendingRow(
+                                "Pedido para receber de @${p.nickname} enviado",
+                                enabled = !state.working,
+                            ) { vm.cancelPending(pendingRequest.id) }
+                            p.receivingFromThem.isEmpty() -> OutlinedButton(
                                 onClick = { vm.requestShare() },
                                 enabled = !state.working,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp),
                             ) { Text("Pedir para receber as notificações de @${p.nickname}") }
                         }
-                        if (p.sharingWithThem.isEmpty()) {
-                            OutlinedButton(
+
+                        when {
+                            pendingOffer != null -> PendingRow(
+                                "Oferta para @${p.nickname} enviada",
+                                enabled = !state.working,
+                            ) { vm.cancelPending(pendingOffer.id) }
+                            p.sharingWithThem.isEmpty() -> OutlinedButton(
                                 onClick = { vm.offerShare() },
                                 enabled = !state.working,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp),
@@ -244,6 +285,23 @@ fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
                 TextButton(onClick = { confirmBlock = false }) { Text("Cancelar") }
             },
         )
+    }
+}
+
+@Composable
+private fun PendingRow(text: String, enabled: Boolean, onCancel: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
+            .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        TextButton(onClick = onCancel, enabled = enabled) {
+            Text("Cancelar", color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 

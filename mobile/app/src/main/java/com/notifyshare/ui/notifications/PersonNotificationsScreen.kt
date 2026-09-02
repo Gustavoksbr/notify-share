@@ -211,25 +211,33 @@ fun PersonNotificationsScreen(vm: PersonNotificationsViewModel, nickname: String
 
 @Composable
 private fun Item(row: FeedItemDto) {
-    Column(
-        Modifier
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
             .padding(13.dp),
     ) {
-        Row {
+        com.notifyshare.ui.common.AppIcon(row.packageName, size = 32.dp, modifier = Modifier.padding(top = 2.dp))
+        Column(Modifier.weight(1f)) {
+            Row {
+                Text(
+                    eventTitle(row),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    shortTime(row.occurredAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NotifyShareColors.muted,
+                )
+            }
             Text(
-                eventTitle(row),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
+                eventBody(row),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(shortTime(row.occurredAt), style = MaterialTheme.typography.labelSmall, color = NotifyShareColors.muted)
         }
-        Text(
-            eventBody(row),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }

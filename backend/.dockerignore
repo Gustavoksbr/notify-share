@@ -1,0 +1,14 @@
+# Saidas de build e cache — o Docker reconstroi tudo do zero.
+build/
+bin/
+.gradle/
+.kotlin/
+
+# Segredos e config local — nunca vao para a imagem.
+.env
+.env.*
+firebase-service-account.json
+
+# Nao precisa dentro do container.
+scripts/
+*.md

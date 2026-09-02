@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.client.RestTestClient
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -121,6 +122,23 @@ class SocialFlowTest {
         // a oferece para b: casa com o pedido e ativa
         val activated = post("/grants/offers", a, """{"nickname":"match_b"}""")
         assertTrue(activated.body.contains("\"status\":\"active\""), activated.body)
+    }
+
+    @Test
+    fun `quem iniciou pode cancelar o proprio pedido pendente`() {
+        val a = register("canc_a"); val b = register("canc_b")
+        befriend(a, b, "canc_b")
+
+        // b pede para receber de a
+        val gid = field(post("/grants/requests", b, """{"nickname":"canc_a"}""").body, "id")
+        assertTrue(get("/grants/pending", a).body.contains(gid), "pedido devia estar na caixa de a")
+
+        // b (quem iniciou) cancela
+        assertEquals(204, post("/grants/$gid/decline", b).status)
+        assertFalse(get("/grants/pending", a).body.contains(gid), "pedido devia ter sumido")
+
+        // cancelar de novo: a linha ja nao existe
+        assertEquals(404, post("/grants/$gid/decline", b).status)
     }
 
     @Test

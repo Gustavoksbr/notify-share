@@ -69,6 +69,14 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
     // "Adicionar conta": mostra o login mesmo com uma sessao ativa.
     var addingAccount by remember { mutableStateOf(false) }
 
+    // Criado sempre (barato). Antes ficava depois do early-return, e o
+    // authComplete de um login anterior ainda ficava true — ao "adicionar conta"
+    // o LaunchedEffect disparava na hora e voltava pra home sem mostrar o login.
+    val authViewModel: AuthViewModel = viewModel(
+        factory = remember(container) { AuthViewModel.Factory(container.authRepository) },
+    )
+    val authState by authViewModel.state.collectAsStateWithLifecycle()
+
     // Android 13+: pede permissao de notificacao uma vez, ja logado.
     var askedForNotifications by remember { mutableStateOf(false) }
     val notifPermission = rememberLauncherForActivityResult(
@@ -81,21 +89,6 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
         }
     }
 
-    if (hasSession && !addingAccount) {
-        MainShell(
-            container = container,
-            openTarget = openTarget,
-            onAddAccount = { addingAccount = true },
-        )
-        return
-    }
-
-    val navController = rememberNavController()
-    val authViewModel: AuthViewModel = viewModel(
-        factory = remember(container) { AuthViewModel.Factory(container.authRepository) },
-    )
-    val authState by authViewModel.state.collectAsStateWithLifecycle()
-
     // Adicionar conta: ao autenticar, recria a Activity para tudo reler do zero
     // (mesmo caminho da troca de conta). No login normal, hasSession ja resolve.
     LaunchedEffect(authState.authComplete) {
@@ -104,6 +97,21 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
             (context as? android.app.Activity)?.recreate()
         }
     }
+
+    if (hasSession && !addingAccount) {
+        MainShell(
+            container = container,
+            openTarget = openTarget,
+            onAddAccount = {
+                // limpa authComplete/senha do login anterior antes de abrir o form
+                authViewModel.resetForm()
+                addingAccount = true
+            },
+        )
+        return
+    }
+
+    val navController = rememberNavController()
 
     NavHost(navController = navController, startDestination = Routes.LOGIN) {
         composable(Routes.LOGIN) {

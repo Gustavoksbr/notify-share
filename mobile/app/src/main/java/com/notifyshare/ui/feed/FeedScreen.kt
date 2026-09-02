@@ -264,6 +264,7 @@ private fun FeedCard(row: FeedItemDto, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(14.dp),
     ) {
+        com.notifyshare.ui.common.AppIcon(row.packageName, size = 34.dp, modifier = Modifier.padding(top = 2.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

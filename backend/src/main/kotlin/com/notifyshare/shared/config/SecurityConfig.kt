@@ -41,7 +41,7 @@ class SecurityConfig(private val jwtFilter: JwtAuthenticationFilter) {
                     "/auth/register", "/auth/login", "/auth/google", "/auth/refresh", "/auth/logout",
                 )
                     .permitAll()
-                    .requestMatchers("/actuator/health").permitAll()
+                    .requestMatchers("/actuator/health", "/ping").permitAll()
                     // O handshake do WebSocket se autentica sozinho pelo ?token=
                     // (WsHandshakeInterceptor). Aqui so liberamos a rota do filtro HTTP.
                     .requestMatchers("/ws").permitAll()

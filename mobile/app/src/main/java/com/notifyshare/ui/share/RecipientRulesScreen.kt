@@ -99,12 +99,14 @@ fun RecipientRulesScreen(vm: RecipientRulesViewModel, nickname: String, onBack: 
                 items(state.rules, key = { it.packageName }) { rule ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
                             .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     ) {
+                        com.notifyshare.ui.common.AppIcon(rule.packageName, size = 36.dp)
                         Column(Modifier.weight(1f)) {
                             Text(prettyPackage(rule.packageName), style = MaterialTheme.typography.bodyLarge)
                             Text(

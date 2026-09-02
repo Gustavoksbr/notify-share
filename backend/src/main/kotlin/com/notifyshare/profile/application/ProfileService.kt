@@ -23,6 +23,8 @@ data class UserProfileView(
     val sharingWithThem: List<GrantView>,
     /** Grants em que essa pessoa compartilha comigo. */
     val receivingFromThem: List<GrantView>,
+    /** Pedidos/ofertas pendentes que EU iniciei com essa pessoa (da para cancelar). */
+    val outgoingPending: List<GrantView>,
 )
 
 @Service
@@ -41,6 +43,7 @@ class ProfileService(
 
         val sharing = grants.listForSharer(meId).filter { it.counterpart.equals(target.nickname, true) }
         val receiving = grants.listForRecipient(meId).filter { it.counterpart.equals(target.nickname, true) }
+        val outgoing = grants.pending(meId).outgoing.filter { it.counterpart.equals(target.nickname, true) }
 
         return UserProfileView(
             nickname = target.nickname,
@@ -48,6 +51,7 @@ class ProfileService(
             blockedByMe = blocks.iBlocked(meId, target.id),
             sharingWithThem = sharing,
             receivingFromThem = receiving,
+            outgoingPending = outgoing,
         )
     }
 }

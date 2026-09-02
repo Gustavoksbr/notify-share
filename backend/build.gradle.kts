@@ -77,4 +77,15 @@ allOpen {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Sem Docker: se SPRING_DATASOURCE_URL estiver no ambiente, os testes usam
+    // esse Postgres em vez de subir um container.
+    if (!System.getenv("SPRING_DATASOURCE_URL").isNullOrBlank()) {
+        systemProperty("notifyshare.test.use-container", "false")
+    }
+}
+
+// So o fat jar executavel do Spring Boot. Sem isto o build/libs/ tem tambem o
+// "-plain.jar", e o start em producao (java -jar build/libs/*.jar) fica ambiguo.
+tasks.named<Jar>("jar") {
+    enabled = false
 }

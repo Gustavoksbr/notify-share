@@ -8,7 +8,10 @@ spring:
     import: optional:file:.env[.properties]
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/notifyshare?user=postgres&password=root}
+    # Padrao = Postgres local de desenvolvimento. Producao entra pelo profile
+    # "prod" (application-prod.yml, usa DATABASE_URL). O script de E2E injeta
+    # SPRING_DATASOURCE_URL, que tem precedencia sobre este valor.
+    url: ${DATABASE_URL_DEV:jdbc:postgresql://localhost:5432/notifyshare?user=postgres&password=root}
     hikari:
       maximum-pool-size: 10
       pool-name: notifyshare-pool
@@ -24,6 +27,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Se o schema ja tiver tabelas mas nenhum historico (ex.: banco Supabase
+    # criado por outra via), cria a baseline em vez de falhar.
+    baseline-on-migrate: true
 
   jackson:
     default-property-inclusion: non_null
@@ -58,6 +64,12 @@ notifyshare:
   events:
     # Historico apagado depois deste tempo. O usuario pode encurtar no app.
     default-retention: ${EVENT_RETENTION:P7D}
+
+  self-ping:
+    # URL publica desta API (ex.: https://notify-share-backend.onrender.com).
+    # Vazio = desligado (dev/local). Setado = pinga /ping a cada 10 min para o
+    # Render nao hibernar e o Supabase nao pausar por inatividade.
+    url: ${API_PRODUCTION_URL:}
 
 springdoc:
   # Desligue em producao: SWAGGER_ENABLED=false remove a UI e o /v3/api-docs.

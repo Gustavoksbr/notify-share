@@ -102,6 +102,32 @@ object NotifyIcons {
         strokeIcon(name = "Chevron", "M9 18l6-6-6-6")
     }
 
+    val Battery: ImageVector by lazy {
+        strokeIcon(
+            name = "Battery",
+            "M3 8a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+            "M21 10v4",
+        )
+    }
+
+    val Wifi: ImageVector by lazy {
+        strokeIcon(
+            name = "Wifi",
+            "M2 8.5a16 16 0 0 1 20 0",
+            "M5 12a11 11 0 0 1 14 0",
+            "M8.5 15.5a6 6 0 0 1 7 0",
+            "M12 19h.01",
+        )
+    }
+
+    val AppFallback: ImageVector by lazy {
+        strokeIcon(
+            name = "AppFallback",
+            "M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z",
+            "M8 8h8v8H8z",
+        )
+    }
+
     private fun strokeIcon(name: String, vararg pathData: String): ImageVector =
         ImageVector.Builder(
             name = name,
