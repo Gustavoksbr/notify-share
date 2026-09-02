@@ -1,6 +1,7 @@
 package com.notifyshare.data
 
 import com.notifyshare.data.remote.GrantDto
+import com.notifyshare.data.remote.FriendRequestBody
 import com.notifyshare.data.remote.NicknameBody
 import com.notifyshare.data.remote.NotifyShareApi
 import com.notifyshare.data.remote.PendingGrantsDto
@@ -47,8 +48,14 @@ class SocialRepository(
 
     suspend fun friendRequests(): ApiResult<PendingRequestsDto> = apiCall(json) { api.friendRequests() }
 
-    suspend fun addFriend(nickname: String): ApiResult<SearchResultDto> =
-        apiCall(json) { api.sendFriendRequest(NicknameBody(nickname)) }
+    suspend fun addFriend(
+        nickname: String,
+        alsoOfferShare: Boolean = false,
+        alsoRequestShare: Boolean = false,
+    ): ApiResult<SearchResultDto> =
+        apiCall(json) {
+            api.sendFriendRequest(FriendRequestBody(nickname, alsoOfferShare, alsoRequestShare))
+        }
 
     suspend fun acceptFriend(id: String): ApiResult<Unit> = apiCall(json) { api.acceptFriend(id) }
 

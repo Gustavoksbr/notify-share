@@ -26,6 +26,10 @@ import java.util.UUID
 
 data class NicknameRequest(
     @field:NotBlank @field:Schema(example = "marina.costa") val nickname: String = "",
+    @field:Schema(description = "Ao aceitar a amizade, já criar um compartilhamento oferecendo minhas notificações.")
+    val alsoOfferShare: Boolean = false,
+    @field:Schema(description = "Ao aceitar a amizade, já pedir para receber as notificações dessa pessoa.")
+    val alsoRequestShare: Boolean = false,
 )
 
 @RestController
@@ -61,7 +65,7 @@ class FriendController(private val friends: FriendService) {
     fun request(
         @AuthenticationPrincipal me: AuthenticatedUser,
         @Valid @RequestBody body: NicknameRequest,
-    ): SearchResult = friends.request(me.id, body.nickname)
+    ): SearchResult = friends.request(me.id, body.nickname, body.alsoOfferShare, body.alsoRequestShare)
 
     @PostMapping("/friends/requests/{id}/accept")
     @ResponseStatus(HttpStatus.NO_CONTENT)

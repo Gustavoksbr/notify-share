@@ -144,15 +144,35 @@ class AuthService(
         val stored = refreshTokens.findByTokenHash(hash)
             ?: throw UnauthorizedException("invalid_refresh_token", "Sessao invalida, entre novamente")
 
-        // Deteccao de reuso: um token ja rotacionado ou revogado voltando
-        // significa que alguem copiou o valor. Derruba a familia inteira.
-        //
-        // A revogacao vai por um bean com REQUIRES_NEW porque o throw logo abaixo
-        // faria rollback desta transacao e desfaria a revogacao.
         if (!stored.isActive) {
-            revoker.revokeFamily(stored.familyId)
-            log.warn("Reuso de refresh token detectado, familia {} revogada", stored.familyId)
-            throw UnauthorizedException("refresh_token_reused", "Sessao encerrada por seguranca, entre novamente")
+            // Um token ja rotacionado voltando pode ser duas coisas: vazamento,
+            // ou o proprio cliente reenviando numa corrida (duas chamadas tomaram
+            // 401 quase juntas e as duas tentaram renovar). Distinguimos:
+            //   - a rotacao seguinte ainda esta ativa E foi ha pouco  -> corrida
+            //   - qualquer outro caso                                 -> vazamento
+            val replacement = stored.replacedBy?.let { refreshTokens.findById(it).orElse(null) }
+            val withinGrace = stored.revokedAt
+                ?.isAfter(Instant.now().minus(jwt.refreshReuseGrace)) == true
+            val looksLikeRace = replacement != null && replacement.isActive && withinGrace
+
+            if (!looksLikeRace) {
+                // A revogacao vai por um bean com REQUIRES_NEW porque o throw logo
+                // abaixo faria rollback desta transacao e desfaria a revogacao.
+                revoker.revokeFamily(stored.familyId)
+                log.warn("Reuso de refresh token detectado, familia {} revogada", stored.familyId)
+                throw UnauthorizedException(
+                    "refresh_token_reused",
+                    "Sessao encerrada por seguranca, entre novamente",
+                )
+            }
+
+            log.info("Refresh reapresentado dentro da janela de graca, familia {}", stored.familyId)
+            val user = users.findById(stored.userId).orElseThrow {
+                UnauthorizedException("invalid_refresh_token", "Sessao invalida, entre novamente")
+            }
+            // Emite um par novo na mesma familia sem mexer no `stored` (que segue
+            // revogado) nem no replacement (que segue valido para a outra chamada).
+            return issueWithEntity(user, stored.familyId, deviceLabel ?: stored.deviceLabel).first
         }
 
         val user = users.findById(stored.userId).orElseThrow {

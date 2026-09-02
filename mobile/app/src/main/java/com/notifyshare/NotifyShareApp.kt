@@ -40,7 +40,7 @@ class AppContainer(context: Context) {
 
     val session = SessionState()
     val shareState = ShareState(context.applicationContext)
-    val cache = JsonCache(context.applicationContext)
+    val cache = JsonCache(context.applicationContext) { tokenStore.activeId() }
     val recentApps = com.notifyshare.data.local.RecentAppsStore(context.applicationContext)
 
     val authRepository = AuthRepository(tokenStore, api, json)

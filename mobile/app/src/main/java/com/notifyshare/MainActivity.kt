@@ -94,7 +94,7 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
     LaunchedEffect(authState.authComplete) {
         if (authState.authComplete && addingAccount) {
             addingAccount = false
-            (context as? android.app.Activity)?.recreate()
+            com.notifyshare.ui.restartUiForAccountChange(context)
         }
     }
 

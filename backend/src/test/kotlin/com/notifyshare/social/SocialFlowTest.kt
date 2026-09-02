@@ -94,6 +94,48 @@ class SocialFlowTest {
     }
 
     @Test
+    fun `pedir amizade ja pedindo compartilhamento cria o grant ao aceitar`() {
+        val a = register("c3req_a"); val b = register("c3req_b")
+
+        // A pede amizade e ja marca que quer receber as notificacoes de B
+        assertEquals(
+            200,
+            post("/friends/requests", a, """{"nickname":"c3req_b","alsoRequestShare":true}""").status,
+        )
+        // enquanto pendente, nenhum grant existe
+        assertFalse(get("/grants/pending", a).body.contains("c3req_b"), get("/grants/pending", a).body)
+
+        val reqId = field(get("/friends/requests", b).body, "id")
+        assertEquals(204, post("/friends/requests/$reqId/accept", b).status)
+
+        // agora A tem um pedido de compartilhamento pendente com B (A iniciou)
+        val pendingA = get("/grants/pending", a).body
+        assertTrue(pendingA.contains("c3req_b") && pendingA.contains("\"outgoing\""), pendingA)
+        // e do lado de B aparece como recebido
+        assertTrue(get("/grants/pending", b).body.contains("c3req_a"), get("/grants/pending", b).body)
+    }
+
+    @Test
+    fun `pedir amizade oferecendo e pedindo cria os dois grants`() {
+        val a = register("c3both_a"); val b = register("c3both_b")
+
+        assertEquals(
+            200,
+            post(
+                "/friends/requests", a,
+                """{"nickname":"c3both_b","alsoOfferShare":true,"alsoRequestShare":true}""",
+            ).status,
+        )
+        val reqId = field(get("/friends/requests", b).body, "id")
+        assertEquals(204, post("/friends/requests/$reqId/accept", b).status)
+
+        // A oferece (sharer) e pede (recipient): os dois grants pendentes
+        val pendingA = get("/grants/pending", a).body
+        assertTrue(pendingA.contains("\"role\":\"sharer\""), pendingA)
+        assertTrue(pendingA.contains("\"role\":\"recipient\""), pendingA)
+    }
+
+    @Test
     fun `busca mostra a relacao atual`() {
         val a = register("busca_a"); register("busca_alvo")
         post("/friends/requests", a, """{"nickname":"busca_alvo"}""")

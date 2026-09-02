@@ -82,4 +82,6 @@ class JwtService(private val properties: JwtProperties) {
     fun refreshExpiry(): Instant = Instant.now().plus(properties.refreshTtl)
 
     val accessTtlSeconds: Long get() = properties.accessTtl.seconds
+
+    val refreshReuseGrace: java.time.Duration get() = properties.refreshReuseGrace
 }

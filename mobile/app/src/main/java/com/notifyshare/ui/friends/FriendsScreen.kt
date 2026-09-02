@@ -19,6 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -34,7 +37,9 @@ import com.notifyshare.data.remote.FriendRequestDto
 import com.notifyshare.data.remote.SearchResultDto
 import com.notifyshare.ui.common.Avatar
 import com.notifyshare.ui.common.EmptyState
+import com.notifyshare.ui.common.InlineActionButton
 import com.notifyshare.ui.common.LoadingBox
+import com.notifyshare.ui.common.PillButton
 import com.notifyshare.ui.common.ScreenTitle
 import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.theme.NotifyIcons
@@ -44,6 +49,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class FriendsUiState(
@@ -57,6 +63,8 @@ data class FriendsUiState(
     val error: String? = null,
     val failedToLoad: Boolean = false,
     val refreshing: Boolean = false,
+    /** Acoes em curso: "add:<nick>", "accept:<id>", "decline:<id>". */
+    val busy: Set<String> = emptySet(),
 )
 
 class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
@@ -118,14 +126,27 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
         }
     }
 
-    fun add(nickname: String) = viewModelScope.launch {
-        repo.addFriend(nickname)
+    fun add(
+        nickname: String,
+        alsoOfferShare: Boolean = false,
+        alsoRequestShare: Boolean = false,
+    ) = launchBusy("add:$nickname") {
+        repo.addFriend(nickname, alsoOfferShare, alsoRequestShare)
         onQuery(_state.value.query)
         load(silent = true)
     }
 
-    fun accept(id: String) = viewModelScope.launch { repo.acceptFriend(id); load(silent = true) }
-    fun decline(id: String) = viewModelScope.launch { repo.declineFriend(id); load(silent = true) }
+    fun accept(id: String) = launchBusy("accept:$id") { repo.acceptFriend(id); load(silent = true) }
+    fun decline(id: String) = launchBusy("decline:$id") { repo.declineFriend(id); load(silent = true) }
+
+    private fun launchBusy(key: String, block: suspend () -> Unit) = viewModelScope.launch {
+        _state.update { it.copy(busy = it.busy + key) }
+        try {
+            block()
+        } finally {
+            _state.update { it.copy(busy = it.busy - key) }
+        }
+    }
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -137,6 +158,7 @@ fun FriendsScreen(
     onOpenProfile: (String) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    var addTarget by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Amigos")
@@ -183,14 +205,30 @@ fun FriendsScreen(
             if (state.results.isNotEmpty()) {
                 item { SectionLabel("Resultado da busca") }
                 items(state.results, key = { "search_${it.nickname}" }) { r ->
-                    SearchRow(r, onAdd = { vm.add(r.nickname) }, onOpen = { onOpenProfile(r.nickname) })
+                    SearchRow(
+                        r,
+                        busy = "add:${r.nickname}" in state.busy,
+                        // "none" abre o diálogo com as opções de já compartilhar;
+                        // "request_received" só aceita (a intenção é de quem pediu).
+                        onAdd = {
+                            if (r.relation == "request_received") vm.add(r.nickname)
+                            else addTarget = r.nickname
+                        },
+                        onOpen = { onOpenProfile(r.nickname) },
+                    )
                 }
             }
 
             if (state.incoming.isNotEmpty()) {
                 item { SectionLabel("Pedidos de amizade · ${state.incoming.size}") }
                 items(state.incoming, key = { "req_${it.id}" }) { req ->
-                    RequestRow(req, onAccept = { vm.accept(req.id) }, onDecline = { vm.decline(req.id) })
+                    RequestRow(
+                        req,
+                        accepting = "accept:${req.id}" in state.busy,
+                        declining = "decline:${req.id}" in state.busy,
+                        onAccept = { vm.accept(req.id) },
+                        onDecline = { vm.decline(req.id) },
+                    )
                 }
             }
 
@@ -234,10 +272,63 @@ fun FriendsScreen(
         }
         }
     }
+
+    addTarget?.let { nick ->
+        AddFriendDialog(
+            nickname = nick,
+            onDismiss = { addTarget = null },
+            onConfirm = { offer, request ->
+                vm.add(nick, offer, request)
+                addTarget = null
+            },
+        )
+    }
 }
 
 @Composable
-private fun SearchRow(r: SearchResultDto, onAdd: () -> Unit, onOpen: () -> Unit) {
+private fun AddFriendDialog(
+    nickname: String,
+    onDismiss: () -> Unit,
+    onConfirm: (alsoOfferShare: Boolean, alsoRequestShare: Boolean) -> Unit,
+) {
+    var offer by remember { mutableStateOf(false) }
+    var request by remember { mutableStateOf(false) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Adicionar @$nickname") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Quando @$nickname aceitar, já deixar encaminhado:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NotifyShareColors.muted,
+                )
+                CheckRow("Quero receber as notificações de @$nickname", request) { request = it }
+                CheckRow("Quero compartilhar as minhas com @$nickname", offer) { offer = it }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(offer, request) }) { Text("Enviar pedido") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+@Composable
+private fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxWidth().clickable { onChange(!checked) },
+    ) {
+        androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = onChange)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun SearchRow(r: SearchResultDto, busy: Boolean, onAdd: () -> Unit, onOpen: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -263,13 +354,23 @@ private fun SearchRow(r: SearchResultDto, onAdd: () -> Unit, onOpen: () -> Unit)
             )
         }
         if (r.relation == "none" || r.relation == "request_received") {
-            PillButton(if (r.relation == "request_received") "Aceitar" else "Adicionar", onAdd)
+            PillButton(
+                if (r.relation == "request_received") "Aceitar" else "Adicionar",
+                onAdd,
+                loading = busy,
+            )
         }
     }
 }
 
 @Composable
-private fun RequestRow(req: FriendRequestDto, onAccept: () -> Unit, onDecline: () -> Unit) {
+private fun RequestRow(
+    req: FriendRequestDto,
+    accepting: Boolean,
+    declining: Boolean,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -279,8 +380,8 @@ private fun RequestRow(req: FriendRequestDto, onAccept: () -> Unit, onDecline: (
     ) {
         Avatar(req.nickname, size = 40)
         Text("@${req.nickname}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = onDecline) { Text("Recusar", color = NotifyShareColors.muted) }
-        PillButton("Aceitar", onAccept)
+        InlineActionButton("Recusar", onDecline, loading = declining)
+        PillButton("Aceitar", onAccept, loading = accepting, enabled = !declining)
     }
 }
 
@@ -305,17 +406,4 @@ private fun FriendRow(f: FriendDto, onClick: () -> Unit, onAvatar: () -> Unit) {
         }
         Icon(NotifyIcons.Chevron, null, tint = NotifyShareColors.muted)
     }
-}
-
-@Composable
-private fun PillButton(text: String, onClick: () -> Unit) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onPrimary,
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
-    )
 }

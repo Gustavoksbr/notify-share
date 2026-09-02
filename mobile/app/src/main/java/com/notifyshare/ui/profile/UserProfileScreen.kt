@@ -15,7 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,6 +50,7 @@ data class UserProfileUiState(
     val profile: UserProfileDto? = null,
     val failedToLoad: Boolean = false,
     val working: Boolean = false,
+    val refreshing: Boolean = false,
     /** mensagem curta apos oferecer/pedir compartilhamento */
     val notice: String? = null,
 )
@@ -65,6 +65,12 @@ class UserProfileViewModel(
 
     init { load() }
 
+    fun refresh() {
+        com.notifyshare.core.Connectivity.probeBeforeRefresh()
+        _state.value = _state.value.copy(refreshing = true)
+        load()
+    }
+
     fun load() {
         _state.value = _state.value.copy(loading = _state.value.profile == null)
         viewModelScope.launch {
@@ -73,12 +79,14 @@ class UserProfileViewModel(
                     // preserva o aviso — recarregar nao pode apagar o "pedido enviado"
                     _state.value = _state.value.copy(
                         loading = false,
+                        refreshing = false,
                         profile = r.value,
                         failedToLoad = false,
                     )
                 is ApiResult.Failure ->
                     _state.value = _state.value.copy(
                         loading = false,
+                        refreshing = false,
                         failedToLoad = _state.value.profile == null,
                     )
             }
@@ -146,7 +154,11 @@ class UserProfileViewModel(
 }
 
 @Composable
-fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
+fun UserProfileScreen(
+    vm: UserProfileViewModel,
+    onBack: () -> Unit,
+    onOpenChat: (String) -> Unit = {},
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     var confirmBlock by remember { mutableStateOf(false) }
 
@@ -159,6 +171,7 @@ fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
                 ErrorRetry("Não foi possível carregar este perfil.", vm::load)
             else -> {
                 val p = state.profile!!
+                com.notifyshare.ui.common.PullRefresh(state.refreshing, vm::refresh, Modifier.weight(1f)) {
                 Column(
                     Modifier
                         .fillMaxSize()
@@ -181,6 +194,13 @@ fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
                             color = if (p.blockedByMe) MaterialTheme.colorScheme.error
                             else NotifyShareColors.muted,
                         )
+                        if (p.friend && !p.blockedByMe) {
+                            com.notifyshare.ui.common.PillButton(
+                                "Enviar mensagem",
+                                onClick = { onOpenChat(p.nickname) },
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
 
                     // futuramente: foto de perfil salva pelo usuário
@@ -223,11 +243,12 @@ fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
                                 "Pedido para receber de @${p.nickname} enviado",
                                 enabled = !state.working,
                             ) { vm.cancelPending(pendingRequest.id) }
-                            p.receivingFromThem.isEmpty() -> OutlinedButton(
+                            p.receivingFromThem.isEmpty() -> com.notifyshare.ui.common.OutlinedActionButton(
+                                "Pedir para receber as notificações de @${p.nickname}",
                                 onClick = { vm.requestShare() },
-                                enabled = !state.working,
+                                loading = state.working,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp),
-                            ) { Text("Pedir para receber as notificações de @${p.nickname}") }
+                            )
                         }
 
                         when {
@@ -235,31 +256,36 @@ fun UserProfileScreen(vm: UserProfileViewModel, onBack: () -> Unit) {
                                 "Oferta para @${p.nickname} enviada",
                                 enabled = !state.working,
                             ) { vm.cancelPending(pendingOffer.id) }
-                            p.sharingWithThem.isEmpty() -> OutlinedButton(
+                            p.sharingWithThem.isEmpty() -> com.notifyshare.ui.common.OutlinedActionButton(
+                                "Oferecer minhas notificações para @${p.nickname}",
                                 onClick = { vm.offerShare() },
-                                enabled = !state.working,
+                                loading = state.working,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp),
-                            ) { Text("Oferecer minhas notificações para @${p.nickname}") }
+                            )
                         }
                     }
 
                     Spacer(Modifier.height(24.dp))
 
                     if (p.blockedByMe) {
-                        OutlinedButton(
+                        com.notifyshare.ui.common.OutlinedActionButton(
+                            "Desbloquear",
                             onClick = { vm.unblock() },
-                            enabled = !state.working,
+                            loading = state.working,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
-                        ) { Text("Desbloquear") }
+                        )
                     } else {
-                        OutlinedButton(
+                        com.notifyshare.ui.common.OutlinedActionButton(
+                            "Bloquear",
                             onClick = { confirmBlock = true },
                             enabled = !state.working,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
-                        ) { Text("Bloquear", color = MaterialTheme.colorScheme.error) }
+                            textColor = MaterialTheme.colorScheme.error,
+                        )
                     }
 
                     Spacer(Modifier.height(24.dp))
+                }
                 }
             }
         }
@@ -299,9 +325,12 @@ private fun PendingRow(text: String, enabled: Boolean, onCancel: () -> Unit) {
             .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
     ) {
         Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = onCancel, enabled = enabled) {
-            Text("Cancelar", color = MaterialTheme.colorScheme.error)
-        }
+        com.notifyshare.ui.common.InlineActionButton(
+            "Cancelar",
+            onCancel,
+            loading = !enabled,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 

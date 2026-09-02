@@ -1,6 +1,7 @@
 package com.notifyshare.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.notifyshare.ui.theme.NotifyIcons
@@ -216,5 +219,101 @@ fun StatusBanner(text: String, modifier: Modifier = Modifier) {
                 .background(NotifyShareColors.online, CircleShape),
         )
         Text(text, style = MaterialTheme.typography.bodySmall, color = NotifyShareColors.online)
+    }
+}
+
+/**
+ * Botao-pilula preenchido (acao primaria de uma linha: "Aceitar", "Adicionar").
+ * Enquanto [loading], troca o texto por um spinner do mesmo tamanho — a largura
+ * nao pula — e ignora toques. Toda acao que espera resposta do backend usa isto.
+ */
+@Composable
+fun PillButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val active = enabled && !loading
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .background(
+                if (active) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                RoundedCornerShape(20.dp),
+            )
+            .clickable(enabled = active, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 9.dp),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.alpha(if (loading) 0f else 1f),
+        )
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+    }
+}
+
+/**
+ * `OutlinedButton` de largura cheia (acoes de perfil: bloquear, oferecer…).
+ * Troca o texto por um spinner enquanto [loading].
+ */
+@Composable
+fun OutlinedActionButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    enabled: Boolean = true,
+    textColor: Color = Color.Unspecified,
+) {
+    androidx.compose.material3.OutlinedButton(
+        onClick = onClick,
+        enabled = enabled && !loading,
+        modifier = modifier,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Text(text, color = textColor)
+        }
+    }
+}
+
+/**
+ * Acao secundaria em texto ("Recusar", "Cancelar", "Remover"). Vira um spinner
+ * pequeno enquanto [loading] e para de responder a toques.
+ */
+@Composable
+fun InlineActionButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    color: Color = NotifyShareColors.muted,
+) {
+    TextButton(onClick = onClick, enabled = !loading, modifier = modifier) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(15.dp),
+                strokeWidth = 2.dp,
+                color = color,
+            )
+        } else {
+            Text(text, color = color)
+        }
     }
 }

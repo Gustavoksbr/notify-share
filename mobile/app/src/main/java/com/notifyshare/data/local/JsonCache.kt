@@ -17,18 +17,31 @@ private val Context.cacheStore by preferencesDataStore(name = "notifyshare_cache
  *
  * Serve o modo offline: a tela mostra o cache na hora e, se a rede falhar,
  * continua mostrando o cache com o aviso de "offline".
+ *
+ * Toda chave e prefixada pelo id da conta ativa ([scopeId]). Sem isso, ao trocar
+ * de conta a tela seguia mostrando amigos/feed/conversas da conta anterior ate
+ * um reload — e uma troca rapida podia misturar as duas.
  */
-class JsonCache(private val context: Context) {
+class JsonCache(
+    private val context: Context,
+    private val scopeId: suspend () -> String?,
+) {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    private suspend fun scoped(key: String): String {
+        val id = runCatching { scopeId() }.getOrNull() ?: "anon"
+        return "$id:$key"
+    }
+
     suspend fun <T> save(key: String, serializer: KSerializer<T>, value: T) {
         val encoded = runCatching { json.encodeToString(serializer, value) }.getOrNull() ?: return
-        context.cacheStore.edit { it[stringPreferencesKey(key)] = encoded }
+        val scopedKey = scoped(key)
+        context.cacheStore.edit { it[stringPreferencesKey(scopedKey)] = encoded }
     }
 
     suspend fun <T> load(key: String, serializer: KSerializer<T>): T? {
-        val raw = context.cacheStore.data.first()[stringPreferencesKey(key)] ?: return null
+        val raw = context.cacheStore.data.first()[stringPreferencesKey(scoped(key))] ?: return null
         return runCatching { json.decodeFromString(serializer, raw) }.getOrNull()
     }
 

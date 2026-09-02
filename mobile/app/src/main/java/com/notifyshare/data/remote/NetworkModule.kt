@@ -3,6 +3,8 @@ package com.notifyshare.data.remote
 import com.notifyshare.BuildConfig
 import com.notifyshare.data.local.SecureTokenStore
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import okhttp3.Authenticator
 import okhttp3.Interceptor
@@ -90,36 +92,51 @@ private class AuthInterceptor(private val tokenStore: SecureTokenStore) : Interc
  *
  * O access token dura 15 minutos, então isso acontece de forma rotineira e o
  * usuário nunca deve perceber. Se o refresh também falhar, a sessão acabou de
- * verdade: limpamos o armazenamento e a UI reage sozinha, porque observa
+ * verdade: limpamos a conta ativa e a UI reage sozinha, porque observa
  * `hasSession`.
+ *
+ * O refresh passa por um [Mutex] (single-flight): quando várias chamadas tomam
+ * 401 quase juntas — o que acontece toda vez que o app abre e dispara feed +
+ * presença + grants —, só a primeira renova. As outras, ao pegar o lock, veem
+ * que o access token já mudou e apenas repetem a request com o token novo, sem
+ * reenviar o refresh já rotacionado (o que o backend leria como vazamento).
  */
 private class TokenAuthenticator(private val tokenStore: SecureTokenStore) : Authenticator {
+
+    private val refreshLock = Mutex()
 
     override fun authenticate(route: Route?, response: Response): Request? {
         // Uma tentativa só. Sem isto, um refresh que devolve 401 vira laço infinito.
         if (response.priorResponse != null) return null
         if (response.request.url.encodedPath.isPublicAuthRoute()) return null
 
-        val refreshed = runBlocking {
-            val refreshToken = tokenStore.refreshToken() ?: return@runBlocking null
-            val result = runCatching {
-                NetworkModule.bareApi().refresh(RefreshRequest(refreshToken))
-            }.getOrNull()
+        val failedToken = response.request.header("Authorization")?.removePrefix("Bearer ")
 
-            val body = result?.takeIf { it.isSuccessful }?.body()
-            if (body == null) {
-                // Inclui o caso refresh_token_reused: a família foi revogada e
-                // não há como recuperar sem passar pelo login de novo.
-                tokenStore.clear()
-                null
-            } else {
-                tokenStore.save(body.accessToken, body.refreshToken)
-                body.accessToken
+        val usableToken = runBlocking {
+            refreshLock.withLock {
+                // Outra chamada pode ter renovado enquanto esperávamos o lock.
+                val current = tokenStore.accessToken()
+                if (!current.isNullOrBlank() && current != failedToken) return@withLock current
+
+                val refreshToken = tokenStore.refreshToken() ?: return@withLock null
+                val body = runCatching {
+                    NetworkModule.bareApi().refresh(RefreshRequest(refreshToken))
+                }.getOrNull()?.takeIf { it.isSuccessful }?.body()
+
+                if (body == null) {
+                    // Inclui o caso refresh_token_reused: a família foi revogada
+                    // e não há como recuperar sem passar pelo login de novo.
+                    runCatching { tokenStore.clear() }
+                    null
+                } else {
+                    tokenStore.save(body.accessToken, body.refreshToken)
+                    body.accessToken
+                }
             }
         } ?: return null
 
         return response.request.newBuilder()
-            .header("Authorization", "Bearer $refreshed")
+            .header("Authorization", "Bearer $usableToken")
             .build()
     }
 }

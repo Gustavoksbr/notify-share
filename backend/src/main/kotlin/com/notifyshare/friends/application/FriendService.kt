@@ -8,6 +8,7 @@ import com.notifyshare.shared.web.ConflictException
 import com.notifyshare.shared.web.ForbiddenException
 import com.notifyshare.shared.web.NotFoundException
 import com.notifyshare.shared.web.ValidationException
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -34,6 +35,7 @@ class FriendService(
     private val friendships: FriendshipRepository,
     private val users: UserRepository,
     private val realtime: RealtimePort,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
 
     // --- consultas usadas por outras features --------------------------------
@@ -111,7 +113,12 @@ class FriendService(
     // --- mutacoes --------------------------------------------------------
 
     @Transactional
-    fun request(requesterId: UUID, targetNickname: String): SearchResult {
+    fun request(
+        requesterId: UUID,
+        targetNickname: String,
+        alsoOfferShare: Boolean = false,
+        alsoRequestShare: Boolean = false,
+    ): SearchResult {
         val target = users.findByNickname(targetNickname.trim().lowercase().removePrefix("@"))
             ?: throw NotFoundException("user_not_found", "Nao existe ninguem com esse nickname")
         if (target.id == requesterId) {
@@ -122,7 +129,13 @@ class FriendService(
         val relation = when {
             existing == null -> {
                 friendships.save(
-                    Friendship(requesterId = requesterId, addresseeId = target.id, status = Friendship.PENDING)
+                    Friendship(
+                        requesterId = requesterId,
+                        addresseeId = target.id,
+                        status = Friendship.PENDING,
+                        alsoOfferShare = alsoOfferShare,
+                        alsoRequestShare = alsoRequestShare,
+                    )
                 )
                 "request_sent"
             }
@@ -131,10 +144,12 @@ class FriendService(
             existing.requesterId == requesterId ->
                 throw ConflictException("request_pending", "Voce ja enviou um pedido para @${target.nickname}")
             else -> {
-                // O outro lado ja tinha pedido: aceitar direto.
+                // O outro lado ja tinha pedido: aceitar direto. As intencoes de
+                // compartilhamento sao as DESTA chamada (quem esta aceitando).
                 existing.status = Friendship.ACCEPTED
                 existing.respondedAt = Instant.now()
                 friendships.save(existing)
+                publishAccepted(requesterId, target.nickname, alsoOfferShare, alsoRequestShare)
                 "friend"
             }
         }
@@ -152,9 +167,23 @@ class FriendService(
             f.status = Friendship.ACCEPTED
             f.respondedAt = Instant.now()
             friendships.save(f)
+            val addresseeNickname = users.findById(userId).map { it.nickname }.orElse(null)
+            if (addresseeNickname != null) {
+                publishAccepted(f.requesterId, addresseeNickname, f.alsoOfferShare, f.alsoRequestShare)
+            }
         } else {
             friendships.delete(f)
         }
+    }
+
+    private fun publishAccepted(
+        requesterId: UUID,
+        addresseeNickname: String,
+        alsoOfferShare: Boolean,
+        alsoRequestShare: Boolean,
+    ) {
+        val event = FriendshipAcceptedEvent(requesterId, addresseeNickname, alsoOfferShare, alsoRequestShare)
+        if (event.wantsAnything) eventPublisher.publishEvent(event)
     }
 
     @Transactional

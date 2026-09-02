@@ -49,6 +49,7 @@ data class ProfileUiState(
     /** true so enquanto ainda nao lemos o aparelho (instantaneo na pratica). */
     val loading: Boolean = true,
     val refreshFailed: Boolean = false,
+    val refreshing: Boolean = false,
 )
 
 class ProfileViewModel(
@@ -77,6 +78,12 @@ class ProfileViewModel(
         load()
     }
 
+    fun refresh() {
+        com.notifyshare.core.Connectivity.probeBeforeRefresh()
+        _state.value = _state.value.copy(refreshing = true)
+        load()
+    }
+
     /** Atualiza em segundo plano; falha nao apaga os dados locais. */
     fun load() {
         viewModelScope.launch {
@@ -90,10 +97,13 @@ class ProfileViewModel(
                         google = r.value.google,
                         loading = false,
                         refreshFailed = false,
+                        refreshing = false,
                     )
                 }
                 is ApiResult.Failure ->
-                    _state.value = _state.value.copy(loading = false, refreshFailed = true)
+                    _state.value = _state.value.copy(
+                        loading = false, refreshFailed = true, refreshing = false,
+                    )
             }
         }
     }
@@ -122,13 +132,15 @@ fun ProfileScreen(
 
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.load() }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-    ) {
+    Column(Modifier.fillMaxSize()) {
         ScreenTitle("Perfil")
 
+        com.notifyshare.ui.common.PullRefresh(state.refreshing, vm::refresh, Modifier.weight(1f)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -163,12 +175,14 @@ fun ProfileScreen(
                 .fillMaxWidth()
                 .clickable {
                     vm.logout {
-                        (context as? android.app.Activity)?.recreate()
+                        com.notifyshare.ui.restartUiForAccountChange(context)
                     }
                 }
                 .padding(horizontal = 22.dp, vertical = 16.dp),
         ) {
             Text("Sair desta conta", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
+        }
+        }
         }
     }
 }

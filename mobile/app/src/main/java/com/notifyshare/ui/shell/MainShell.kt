@@ -171,6 +171,7 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     onOpenRequests = { nav.navigate("requests") },
                     onOpenRules = { grantId, nick -> nav.navigate("rules/$grantId/$nick") },
                     onOpenNotifyRules = { grantId, nick -> nav.navigate("notify-rules/$grantId/$nick") },
+                    onOpenNotifications = { nick -> nav.navigate("person/$nick") },
                 )
             }
             composable(Tab.Profile.route) {
@@ -193,7 +194,11 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
 
             composable("requests") {
                 val vm: ShareViewModel = viewModel(factory = tabFactory)
-                RequestsScreen(vm = vm, onBack = { nav.popBackStack() })
+                RequestsScreen(
+                    vm = vm,
+                    onBack = { nav.popBackStack() },
+                    onOpenNotifications = { nick -> nav.navigate("person/$nick") },
+                )
             }
             composable(
                 "chat/{nickname}?linkedEvent={linkedEvent}",
@@ -216,7 +221,11 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val nick = entry.arguments?.getString("nickname").orEmpty()
                 val vm: com.notifyshare.ui.profile.UserProfileViewModel =
                     viewModel(factory = com.notifyshare.ui.UserProfileViewModelFactory(container, nick))
-                com.notifyshare.ui.profile.UserProfileScreen(vm = vm, onBack = { nav.popBackStack() })
+                com.notifyshare.ui.profile.UserProfileScreen(
+                    vm = vm,
+                    onBack = { nav.popBackStack() },
+                    onOpenChat = { n -> nav.navigate("chat/$n") },
+                )
             }
             composable("person/{nickname}") { entry ->
                 val nick = entry.arguments?.getString("nickname").orEmpty()

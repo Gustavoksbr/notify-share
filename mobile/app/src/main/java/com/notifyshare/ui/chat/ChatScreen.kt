@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -73,6 +74,8 @@ data class ChatUiState(
     /** Notificacao a vincular na proxima mensagem (veio de "Responder" no feed). */
     val linkedEventId: String? = null,
     val linkedEventLabel: String? = null,
+    /** Ids de mensagens sendo apagadas agora. */
+    val deleting: Set<String> = emptySet(),
 )
 
 class ChatViewModel(
@@ -164,8 +167,13 @@ class ChatViewModel(
     }
 
     fun deleteMessage(item: TimelineItemDto) = viewModelScope.launch {
-        repo.delete(item.id)
-        load(silent = true)
+        _state.value = _state.value.copy(deleting = _state.value.deleting + item.id)
+        try {
+            repo.delete(item.id)
+            load(silent = true)
+        } finally {
+            _state.value = _state.value.copy(deleting = _state.value.deleting - item.id)
+        }
     }
 
     fun send() {
@@ -285,6 +293,7 @@ fun ChatScreen(
                         "audit" -> AuditLine(item)
                         else -> MessageBubble(
                             item = item,
+                            deleting = item.id in state.deleting,
                             onReply = { vm.startReply(item) },
                             onEdit = { vm.startEdit(item) },
                             onDelete = { vm.deleteMessage(item) },
@@ -343,11 +352,19 @@ fun ChatScreen(
                     )
                     .clickable(enabled = !state.sending && canSend) { vm.send() },
             ) {
-                Icon(
-                    if (state.editing != null) NotifyIcons.Check else NotifyIcons.Send,
-                    "Enviar",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                )
+                if (state.sending) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    Icon(
+                        if (state.editing != null) NotifyIcons.Check else NotifyIcons.Send,
+                        "Enviar",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
             }
         }
     }
@@ -415,6 +432,7 @@ private fun ContextBar(title: String, preview: String, onClose: () -> Unit) {
 @Composable
 private fun MessageBubble(
     item: TimelineItemDto,
+    deleting: Boolean,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -431,6 +449,7 @@ private fun MessageBubble(
             Column(
                 modifier = Modifier
                     .widthIn(max = 300.dp)
+                    .alpha(if (deleting) 0.4f else 1f)
                     .background(
                         if (mineColors) MaterialTheme.colorScheme.primaryContainer
                         else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -438,7 +457,7 @@ private fun MessageBubble(
                     )
                     .combinedClickable(
                         onClick = { if (item.linkedEvent != null) onOpenLinked() },
-                        onLongClick = { if (!item.deleted) menu = true },
+                        onLongClick = { if (!item.deleted && !deleting) menu = true },
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {

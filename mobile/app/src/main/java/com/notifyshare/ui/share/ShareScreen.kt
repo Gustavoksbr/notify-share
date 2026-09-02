@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,9 +42,12 @@ import com.notifyshare.ui.common.ScreenTitle
 import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.theme.NotifyIcons
 import com.notifyshare.ui.theme.NotifyShareColors
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ShareUiState(
@@ -56,7 +60,15 @@ data class ShareUiState(
     val refreshing: Boolean = false,
     /** amigos, para o seletor de "novo compartilhamento" */
     val friends: List<String> = emptyList(),
+    /** true depois da primeira resposta OK de /friends. */
+    val friendsLoaded: Boolean = false,
+    /** true quando /friends falhou e nunca carregou — a UI mostra "tente de novo". */
+    val friendsError: Boolean = false,
     val notice: String? = null,
+    /** Quando != null, o aviso ganha um atalho "Ver notificações de @X". */
+    val noticeActionNick: String? = null,
+    /** Acoes em curso: "offer:<nick>", "request:<nick>", "accept:<id>", "decline:<id>", "revoke:<id>", "pause:<id>". */
+    val busy: Set<String> = emptySet(),
 )
 
 class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
@@ -64,18 +76,54 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
     private val _state = MutableStateFlow(ShareUiState())
     val state: StateFlow<ShareUiState> = _state.asStateFlow()
 
+    private var friendsJob: Job? = null
+
     init {
         load()
-        loadFriends()
         viewModelScope.launch {
             AppEvents.bus.collect { if (it == AppEvents.GRANTS || it == AppEvents.FRIENDS) load(silent = true) }
         }
     }
 
-    private fun loadFriends() = viewModelScope.launch {
-        (repo.friends() as? ApiResult.Ok)?.value?.let { list ->
-            _state.value = _state.value.copy(friends = list.map { it.nickname })
+    /**
+     * Carrega a lista de amigos com retry. O plano free da Render hiberna depois
+     * de ociosa, e a primeira chamada ao voltar estoura o timeout — sem retry, a
+     * lista ficava vazia ate o usuario sair e voltar da tela, e o seletor de
+     * "novo compartilhamento" dizia "nenhum amigo" mesmo tendo amigos.
+     */
+    private fun refreshFriends() {
+        friendsJob?.cancel()
+        friendsJob = viewModelScope.launch {
+            repeat(5) { attempt ->
+                when (val r = repo.friends()) {
+                    is ApiResult.Ok -> {
+                        _state.value = _state.value.copy(
+                            friends = r.value.map { it.nickname },
+                            friendsLoaded = true,
+                            friendsError = false,
+                        )
+                        return@launch
+                    }
+                    is ApiResult.Failure -> {
+                        if (!_state.value.friendsLoaded) {
+                            _state.value = _state.value.copy(friendsError = true)
+                        }
+                        if (attempt < 4) delay(3000L * (attempt + 1))
+                    }
+                }
+            }
         }
+    }
+
+    /** Chamado ao abrir o seletor: se ainda nao temos a lista e nada esta em curso, tenta. */
+    fun ensureFriends() {
+        if (!_state.value.friendsLoaded && friendsJob?.isActive != true) refreshFriends()
+    }
+
+    /** Botao "tentar de novo": recomeca ja, mesmo se um retry estiver dormindo. */
+    fun retryFriends() {
+        _state.value = _state.value.copy(friendsError = false)
+        refreshFriends()
     }
 
     fun refresh() {
@@ -86,12 +134,11 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
 
     fun load(silent: Boolean = false) {
         if (!silent) _state.value = _state.value.copy(loading = true, error = null)
-        val prev = _state.value
         viewModelScope.launch {
             val sharer = repo.grants("sharer")
             val recipient = repo.grants("recipient")
             val pending = repo.pendingGrants()
-            _state.value = ShareUiState(
+            _state.value = _state.value.copy(
                 loading = false,
                 refreshing = false,
                 sharing = (sharer as? ApiResult.Ok)?.value.orEmpty(),
@@ -99,37 +146,61 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
                 incoming = (pending as? ApiResult.Ok)?.value?.incoming.orEmpty(),
                 outgoing = (pending as? ApiResult.Ok)?.value?.outgoing.orEmpty(),
                 error = (sharer as? ApiResult.Failure)?.message,
-                friends = prev.friends,
-                notice = prev.notice,
             )
         }
+        refreshFriends()
     }
 
-    fun offerTo(nickname: String) = grantAction("Oferta enviada para @$nickname.") { repo.offerGrant(nickname) }
-    fun requestFrom(nickname: String) = grantAction("Pedido enviado para @$nickname.") { repo.requestGrant(nickname) }
+    fun offerTo(nickname: String) =
+        grantAction("offer:$nickname", "Oferta enviada para @$nickname.") { repo.offerGrant(nickname) }
 
-    private fun grantAction(okMsg: String, call: suspend () -> ApiResult<GrantDto>) = viewModelScope.launch {
+    fun requestFrom(nickname: String) =
+        grantAction("request:$nickname", "Pedido enviado para @$nickname.") { repo.requestGrant(nickname) }
+
+    private fun grantAction(key: String, okMsg: String, call: suspend () -> ApiResult<GrantDto>) = launchBusy(key) {
         val r = call()
-        val msg = when {
-            r is ApiResult.Ok && r.value.status == "active" -> "Compartilhamento ativado."
-            r is ApiResult.Ok -> okMsg
-            r is ApiResult.Failure -> r.message
-            else -> null
-        }
-        _state.value = _state.value.copy(notice = msg)
+        val activeNow = r is ApiResult.Ok && r.value.status == "active"
+        _state.value = _state.value.copy(
+            notice = when {
+                activeNow -> "Compartilhamento ativado."
+                r is ApiResult.Ok -> okMsg
+                r is ApiResult.Failure -> r.message
+                else -> null
+            },
+            noticeActionNick = if (activeNow) (r as ApiResult.Ok).value.counterpart else null,
+        )
         load(silent = true)
     }
 
-    fun dismissNotice() { _state.value = _state.value.copy(notice = null) }
+    fun dismissNotice() { _state.value = _state.value.copy(notice = null, noticeActionNick = null) }
 
-    fun togglePause(g: GrantDto) = viewModelScope.launch {
+    fun togglePause(g: GrantDto) = launchBusy("pause:${g.id}") {
         if (g.isPausedByMe) repo.resumeGrant(g.id) else repo.pauseGrant(g.id)
         load(silent = true)
     }
 
-    fun accept(id: String) = viewModelScope.launch { repo.acceptGrant(id); load(silent = true) }
-    fun decline(id: String) = viewModelScope.launch { repo.declineGrant(id); load(silent = true) }
-    fun revoke(id: String) = viewModelScope.launch { repo.revokeGrant(id); load(silent = true) }
+    fun accept(id: String) = launchBusy("accept:$id") {
+        val r = repo.acceptGrant(id)
+        if (r is ApiResult.Ok) {
+            // atalho de onboarding: leva pras notificacoes desse contato
+            _state.value = _state.value.copy(
+                notice = "Compartilhamento com @${r.value.counterpart} ativado.",
+                noticeActionNick = r.value.counterpart,
+            )
+        }
+        load(silent = true)
+    }
+    fun decline(id: String) = launchBusy("decline:$id") { repo.declineGrant(id); load(silent = true) }
+    fun revoke(id: String) = launchBusy("revoke:$id") { repo.revokeGrant(id); load(silent = true) }
+
+    private fun launchBusy(key: String, block: suspend () -> Unit) = viewModelScope.launch {
+        _state.update { it.copy(busy = it.busy + key) }
+        try {
+            block()
+        } finally {
+            _state.update { it.copy(busy = it.busy - key) }
+        }
+    }
 }
 
 @Composable
@@ -138,6 +209,7 @@ fun ShareScreen(
     onOpenRequests: () -> Unit,
     onOpenRules: (grantId: String, nickname: String) -> Unit,
     onOpenNotifyRules: (grantId: String, nickname: String) -> Unit,
+    onOpenNotifications: (nickname: String) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
@@ -160,7 +232,7 @@ fun ShareScreen(
                 Icon(
                     NotifyIcons.Plus, "Novo compartilhamento",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { picker = true }.padding(12.dp),
+                    modifier = Modifier.clickable { picker = true; vm.ensureFriends() }.padding(12.dp),
                 )
             }
         })
@@ -171,17 +243,7 @@ fun ShareScreen(
         }
 
         state.notice?.let { msg ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .clickable { vm.dismissNotice() }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Text(msg, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                Text("OK", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            }
+            NoticeBar(msg, state.noticeActionNick, onOpenNotifications, vm::dismissNotice)
         }
 
         when {
@@ -212,6 +274,7 @@ fun ShareScreen(
                                 GrantRow(
                                     g = g,
                                     isSharer = tab == 0,
+                                    toggling = "pause:${g.id}" in state.busy,
                                     onToggle = { vm.togglePause(g) },
                                     onClick = {
                                         if (tab == 0) onOpenRules(g.id, g.counterpart)
@@ -231,7 +294,11 @@ fun ShareScreen(
         else state.receiving.map { it.counterpart }.toSet()
         NewShareDialog(
             request = tab == 1,
-            friends = state.friends.filterNot { it in already },
+            available = state.friends.filterNot { it in already },
+            hasAnyFriend = state.friends.isNotEmpty(),
+            friendsLoaded = state.friendsLoaded,
+            friendsError = state.friendsError && !state.friendsLoaded,
+            onRetry = vm::retryFriends,
             onDismiss = { picker = false },
             onPick = { nick ->
                 picker = false
@@ -241,10 +308,51 @@ fun ShareScreen(
     }
 }
 
+/** Aviso curto acima da lista. Com [actionNick], ganha o atalho "Ver notificações de @X". */
+@Composable
+private fun NoticeBar(
+    msg: String,
+    actionNick: String?,
+    onOpenNotifications: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(msg, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+            Text(
+                "OK",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp),
+            )
+        }
+        if (actionNick != null) {
+            Text(
+                "Ver notificações de @$actionNick  →",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable { onDismiss(); onOpenNotifications(actionNick) }
+                    .padding(vertical = 4.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun NewShareDialog(
     request: Boolean,
-    friends: List<String>,
+    available: List<String>,
+    hasAnyFriend: Boolean,
+    friendsLoaded: Boolean,
+    friendsError: Boolean,
+    onRetry: () -> Unit,
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
 ) {
@@ -257,11 +365,9 @@ private fun NewShareDialog(
             )
         },
         text = {
-            if (friends.isEmpty()) {
-                Text("Nenhum amigo disponível. Adicione amigos na aba Amigos primeiro.")
-            } else {
-                LazyColumn {
-                    items(friends, key = { it }) { nick ->
+            when {
+                available.isNotEmpty() -> LazyColumn {
+                    items(available, key = { it }) { nick ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -275,6 +381,29 @@ private fun NewShareDialog(
                         }
                     }
                 }
+
+                friendsError -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Não foi possível carregar seus amigos agora.")
+                    TextButton(onClick = onRetry) { Text("Tentar de novo") }
+                }
+
+                !friendsLoaded -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text("Carregando amigos…")
+                }
+
+                hasAnyFriend -> Text(
+                    if (request) "Você já pede notificações de todos os seus amigos."
+                    else "Você já compartilha com todos os seus amigos.",
+                )
+
+                else -> Text("Você ainda não tem amigos. Adicione alguém na aba Amigos primeiro.")
             }
         },
         confirmButton = {},
@@ -283,7 +412,13 @@ private fun NewShareDialog(
 }
 
 @Composable
-private fun GrantRow(g: GrantDto, isSharer: Boolean, onToggle: () -> Unit, onClick: () -> Unit) {
+private fun GrantRow(
+    g: GrantDto,
+    isSharer: Boolean,
+    toggling: Boolean,
+    onToggle: () -> Unit,
+    onClick: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -309,7 +444,14 @@ private fun GrantRow(g: GrantDto, isSharer: Boolean, onToggle: () -> Unit, onCli
                     color = NotifyShareColors.muted,
                 )
             }
-            Switch(checked = g.isActive, onCheckedChange = { onToggle() })
+            if (toggling) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Switch(checked = g.isActive, onCheckedChange = { onToggle() })
+            }
         }
     }
 }
@@ -317,11 +459,19 @@ private fun GrantRow(g: GrantDto, isSharer: Boolean, onToggle: () -> Unit, onCli
 // --- Pedidos (caixa de pedidos de grant) -------------------------------------
 
 @Composable
-fun RequestsScreen(vm: ShareViewModel, onBack: () -> Unit) {
+fun RequestsScreen(
+    vm: ShareViewModel,
+    onBack: () -> Unit,
+    onOpenNotifications: (nickname: String) -> Unit = {},
+) {
     val state by vm.state.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Pedidos", onBack = onBack)
+
+        state.notice?.let { msg ->
+            NoticeBar(msg, state.noticeActionNick, onOpenNotifications, vm::dismissNotice)
+        }
 
         com.notifyshare.ui.common.PullRefresh(state.refreshing, vm::refresh) {
         LazyColumn(
@@ -334,6 +484,8 @@ fun RequestsScreen(vm: ShareViewModel, onBack: () -> Unit) {
                     PendingCard(
                         title = if (g.role == "sharer") "@${g.counterpart} quer receber suas notificações"
                         else "@${g.counterpart} ofereceu compartilhar com você",
+                        accepting = "accept:${g.id}" in state.busy,
+                        declining = "decline:${g.id}" in state.busy,
                         onAccept = { vm.accept(g.id) },
                         onDecline = { vm.decline(g.id) },
                     )
@@ -345,6 +497,8 @@ fun RequestsScreen(vm: ShareViewModel, onBack: () -> Unit) {
                     PendingCard(
                         title = if (g.role == "sharer") "Você ofereceu compartilhar com @${g.counterpart}"
                         else "Você pediu para receber de @${g.counterpart}",
+                        accepting = false,
+                        declining = "decline:${g.id}" in state.busy,
                         onAccept = null,
                         onDecline = { vm.decline(g.id) },
                     )
@@ -359,7 +513,13 @@ fun RequestsScreen(vm: ShareViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun PendingCard(title: String, onAccept: (() -> Unit)?, onDecline: () -> Unit) {
+private fun PendingCard(
+    title: String,
+    accepting: Boolean,
+    declining: Boolean,
+    onAccept: (() -> Unit)?,
+    onDecline: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -369,19 +529,21 @@ private fun PendingCard(title: String, onAccept: (() -> Unit)?, onDecline: () ->
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(title, style = MaterialTheme.typography.bodyMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(onClick = onDecline) {
-                Text(if (onAccept == null) "Cancelar" else "Recusar", color = NotifyShareColors.muted)
-            }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            com.notifyshare.ui.common.InlineActionButton(
+                if (onAccept == null) "Cancelar" else "Recusar",
+                onDecline,
+                loading = declining,
+            )
             if (onAccept != null) {
-                Text(
+                com.notifyshare.ui.common.PillButton(
                     "Aceitar",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp))
-                        .clickable(onClick = onAccept)
-                        .padding(horizontal = 18.dp, vertical = 9.dp),
+                    onAccept,
+                    loading = accepting,
+                    enabled = !declining,
                 )
             }
         }

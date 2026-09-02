@@ -156,23 +156,53 @@ class AuthFlowTest {
      * e continua comprometido, porque o token vazado segue valendo. Foi
      * exatamente o que a primeira versao fazia, e passava despercebido porque
      * a resposta HTTP ja estava correta.
+     *
+     * Rotacionamos DUAS vezes antes do reuso: assim o token reapresentado ja
+     * tem uma rotacao seguinte que tambem foi substituida, o que descarta a
+     * hipotese de corrida do proprio cliente (essa e coberta no teste abaixo).
      */
     @Test
-    fun `reuso de refresh token derruba a familia inteira`() {
+    fun `reuso de refresh token antigo derruba a familia inteira`() {
         val original = refreshToken(register("reuso", "reuso@teste.com").body)
-        val rotacionado = refreshToken(post("/auth/refresh", """{"refreshToken":"$original"}""").body)
+        val r1 = refreshToken(post("/auth/refresh", """{"refreshToken":"$original"}""").body)
+        val r2 = refreshToken(post("/auth/refresh", """{"refreshToken":"$r1"}""").body)
 
-        // Alguem apresenta o token antigo: so pode ser copia.
+        // Alguem apresenta o token mais antigo, ja duas rotacoes atras: so pode
+        // ser copia.
         val reuso = post("/auth/refresh", """{"refreshToken":"$original"}""")
         assertEquals(401, reuso.status)
         assertTrue(reuso.body.contains("refresh_token_reused"), reuso.body)
 
-        // O token legitimo morre junto: nao da para saber qual das duas pontas
-        // e a atacante, entao as duas voltam para o login.
-        assertEquals(401, post("/auth/refresh", """{"refreshToken":"$rotacionado"}""").status)
+        // A familia inteira morre junto: nao da para saber qual das pontas e a
+        // atacante, entao todas voltam para o login.
+        assertEquals(401, post("/auth/refresh", """{"refreshToken":"$r2"}""").status)
 
         // Mas quem sabe a senha continua entrando normalmente.
         assertEquals(200, post("/auth/login", """{"identifier":"reuso","password":"$SENHA"}""").status)
+    }
+
+    /**
+     * Corrida do proprio cliente: duas chamadas tomam 401 quase juntas e as
+     * duas tentam renovar com o mesmo refresh. A segunda reapresenta um token
+     * recem-rotacionado cuja rotacao seguinte ainda esta ativa — isso e tratado
+     * como corrida, nao como vazamento. As duas pontas continuam logadas.
+     */
+    @Test
+    fun `reuso imediato de refresh e tratado como corrida do cliente`() {
+        val original = refreshToken(register("corrida", "corrida@teste.com").body)
+        val chamadaA = post("/auth/refresh", """{"refreshToken":"$original"}""")
+        assertEquals(200, chamadaA.status)
+        val tokenA = refreshToken(chamadaA.body)
+
+        // A "segunda chamada" reapresenta o mesmo token original, na hora.
+        val chamadaB = post("/auth/refresh", """{"refreshToken":"$original"}""")
+        assertEquals(200, chamadaB.status)
+        val tokenB = refreshToken(chamadaB.body)
+        assertNotEquals(tokenA, tokenB)
+
+        // Nenhuma familia foi derrubada: os dois tokens novos funcionam.
+        assertEquals(200, post("/auth/refresh", """{"refreshToken":"$tokenA"}""").status)
+        assertEquals(200, post("/auth/refresh", """{"refreshToken":"$tokenB"}""").status)
     }
 
     @Test

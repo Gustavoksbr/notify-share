@@ -11,6 +11,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.security.KeyStore
@@ -55,24 +57,37 @@ class SecureTokenStore(private val context: Context) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * Serializa TODAS as mutacoes da lista de contas. Sem isto, o authenticator
+     * (que roda em thread do OkHttp via runBlocking) podia gravar por cima de um
+     * switchTo/addAccount concorrente, e a lista de contas terminava truncada.
+     */
+    private val mutex = Mutex()
+
     // --- tokens da conta ativa (usado pelo NetworkModule) ----------------
 
     suspend fun accessToken(): String? = activeStored()?.access
 
     suspend fun refreshToken(): String? = activeStored()?.refresh
 
-    suspend fun saveAccessToken(accessToken: String) = updateActive { it.copy(access = accessToken) }
+    /** Id da conta ativa agora, leitura unica. Usado para separar o cache por conta. */
+    suspend fun activeId(): String? = readActiveId()
+
+    suspend fun saveAccessToken(accessToken: String) = mutate { accounts, active ->
+        accounts.map { if (it.id == active) it.copy(access = accessToken) else it } to active
+    }
 
     /** Chamado pelo authenticator apos um refresh bem-sucedido. */
-    suspend fun save(accessToken: String, refreshToken: String) =
-        updateActive { it.copy(access = accessToken, refresh = refreshToken) }
+    suspend fun save(accessToken: String, refreshToken: String) = mutate { accounts, active ->
+        accounts.map {
+            if (it.id == active) it.copy(access = accessToken, refresh = refreshToken) else it
+        } to active
+    }
 
     /** Chamado no logout e quando o refresh falha: remove a conta ATIVA. */
-    suspend fun clear() {
-        val current = readAccounts()
-        val activeId = readActiveId() ?: return
-        writeAccounts(current.filterNot { it.id == activeId })
-        setActiveId(readAccounts().firstOrNull()?.id)
+    suspend fun clear() = mutate { accounts, active ->
+        val remaining = accounts.filterNot { it.id == active }
+        remaining to remaining.firstOrNull()?.id
     }
 
     // --- multi-conta ----------------------------------------------------
@@ -88,18 +103,20 @@ class SecureTokenStore(private val context: Context) {
         refresh: String,
     ) {
         val account = StoredAccount(id, nickname, email, google, hasPassword, access, refresh)
-        val updated = readAccounts().filterNot { it.id == id } + account
-        writeAccounts(updated)
-        setActiveId(id)
+        // Login em andamento: se o blob antigo estiver corrompido, tudo bem
+        // recomecar dele — o usuario acabou de se autenticar.
+        mutate(allowOverwriteOnCorruption = true) { accounts, _ ->
+            (accounts.filterNot { it.id == id } + account) to id
+        }
     }
 
-    suspend fun switchTo(id: String) {
-        if (readAccounts().any { it.id == id }) setActiveId(id)
+    suspend fun switchTo(id: String) = mutate { accounts, active ->
+        accounts to (if (accounts.any { it.id == id }) id else active)
     }
 
-    suspend fun removeAccount(id: String) {
-        writeAccounts(readAccounts().filterNot { it.id == id })
-        if (readActiveId() == id) setActiveId(readAccounts().firstOrNull()?.id)
+    suspend fun removeAccount(id: String) = mutate { accounts, active ->
+        val remaining = accounts.filterNot { it.id == id }
+        remaining to (if (active == id) remaining.firstOrNull()?.id else active)
     }
 
     suspend fun activeTokensFor(id: String): Pair<String, String>? =
@@ -158,26 +175,37 @@ class SecureTokenStore(private val context: Context) {
         return readAccounts().firstOrNull { it.id == activeId }
     }
 
-    private suspend fun updateActive(transform: (StoredAccount) -> StoredAccount) {
-        val activeId = readActiveId() ?: return
-        writeAccounts(readAccounts().map { if (it.id == activeId) transform(it) else it })
-    }
-
-    private suspend fun writeAccounts(list: List<StoredAccount>) {
-        val encoded = encrypt(json.encodeToString(list))
-        context.dataStore.edit { it[KEY_ACCOUNTS] = encoded }
-    }
-
-    private suspend fun setActiveId(id: String?) {
+    /**
+     * Le a lista + o id ativo, aplica [block] e grava os dois de uma vez, tudo
+     * sob o [mutex] e dentro de um unico `edit {}` (atomico no DataStore).
+     *
+     * Se o blob existe mas nao decifra, a escrita e abortada por padrao: sobre-
+     * escrever ali apagaria contas que talvez voltem a decifrar no proximo boot.
+     */
+    private suspend fun mutate(
+        allowOverwriteOnCorruption: Boolean = false,
+        block: (accounts: List<StoredAccount>, activeId: String?) -> Pair<List<StoredAccount>, String?>,
+    ) = mutex.withLock {
         context.dataStore.edit { prefs ->
-            if (id == null) prefs.remove(KEY_ACTIVE) else prefs[KEY_ACTIVE] = id
+            val blob = prefs[KEY_ACCOUNTS]
+            val decoded = decodeAccountsOrNull(blob)
+            check(decoded != null || blob == null || allowOverwriteOnCorruption) {
+                "conta cifrada ilegivel; escrita abortada para nao apagar dados"
+            }
+            val (newList, newActive) = block(decoded ?: emptyList(), prefs[KEY_ACTIVE])
+            prefs[KEY_ACCOUNTS] = encrypt(json.encodeToString(newList))
+            if (newActive == null) prefs.remove(KEY_ACTIVE) else prefs[KEY_ACTIVE] = newActive
         }
     }
 
-    private fun decodeAccounts(blob: String?): List<StoredAccount> {
-        val plain = blob?.let(::decrypt) ?: return emptyList()
-        return runCatching { json.decodeFromString<List<StoredAccount>>(plain) }.getOrDefault(emptyList())
+    /** null = o blob existe mas nao decifra/parseia. emptyList = nao ha blob. */
+    private fun decodeAccountsOrNull(blob: String?): List<StoredAccount>? {
+        if (blob == null) return emptyList()
+        val plain = decrypt(blob) ?: return null
+        return runCatching { json.decodeFromString<List<StoredAccount>>(plain) }.getOrNull()
     }
+
+    private fun decodeAccounts(blob: String?): List<StoredAccount> = decodeAccountsOrNull(blob) ?: emptyList()
 
     // --- cifragem ---------------------------------------------------------
 

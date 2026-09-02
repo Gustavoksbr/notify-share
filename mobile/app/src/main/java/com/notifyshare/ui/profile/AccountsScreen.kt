@@ -11,12 +11,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -58,6 +62,7 @@ fun AccountsScreen(
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val app = context.applicationContext as? NotifyShareApp
+    var confirmRemove by remember { mutableStateOf<AccountInfo?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Contas", onBack = onBack)
@@ -68,13 +73,13 @@ fun AccountsScreen(
             if (google.isNotEmpty()) {
                 item { SectionLabel("Contas Google · entram na hora") }
                 items(google, key = { it.id }) { acc ->
-                    AccountRow(acc, onSwitch = { app?.switchAccount(acc.id) { recreate(context) } }, onRemove = { vm.remove(acc.id) })
+                    AccountRow(acc, onSwitch = { app?.switchAccount(acc.id) { com.notifyshare.ui.restartUiForAccountChange(context) } }, onRemove = { confirmRemove = acc })
                 }
             }
             if (password.isNotEmpty()) {
                 item { SectionLabel("Contas com senha") }
                 items(password, key = { it.id }) { acc ->
-                    AccountRow(acc, onSwitch = { app?.switchAccount(acc.id) { recreate(context) } }, onRemove = { vm.remove(acc.id) })
+                    AccountRow(acc, onSwitch = { app?.switchAccount(acc.id) { com.notifyshare.ui.restartUiForAccountChange(context) } }, onRemove = { confirmRemove = acc })
                 }
             }
 
@@ -92,6 +97,26 @@ fun AccountsScreen(
                 }
             }
         }
+    }
+
+    confirmRemove?.let { acc ->
+        AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text("Remover @${acc.nickname}?") },
+            text = {
+                Text(
+                    "A conta sai da lista deste aparelho. Você vai precisar entrar de novo " +
+                        (if (acc.google) "com o Google " else "com a senha ") +
+                        "para usá-la aqui outra vez. Nada é apagado no servidor.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.remove(acc.id); confirmRemove = null }) {
+                    Text("Remover", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Cancelar") } },
+        )
     }
 }
 
@@ -116,8 +141,4 @@ private fun AccountRow(acc: AccountInfo, onSwitch: () -> Unit, onRemove: () -> U
             TextButton(onClick = onRemove) { Text("Remover", color = NotifyShareColors.muted) }
         }
     }
-}
-
-private fun recreate(context: android.content.Context) {
-    (context as? android.app.Activity)?.recreate()
 }

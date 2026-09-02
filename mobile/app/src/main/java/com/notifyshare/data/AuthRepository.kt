@@ -52,7 +52,7 @@ class AuthRepository(
         }
         // Limpa localmente aconteca o que acontecer: se o servidor estiver fora,
         // o usuario ainda tem que conseguir sair do app.
-        tokenStore.clear()
+        runCatching { tokenStore.clear() }
     }
 
     private suspend fun ApiResult<TokenResponse>.alsoStoreTokens(): ApiResult<UserDto> =

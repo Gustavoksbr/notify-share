@@ -27,6 +27,15 @@ data class PendingRequestsDto(
 @Serializable
 data class NicknameBody(val nickname: String)
 
+@Serializable
+data class FriendRequestBody(
+    val nickname: String,
+    /** ao aceitar a amizade, já criar um grant oferecendo minhas notificações */
+    val alsoOfferShare: Boolean = false,
+    /** ao aceitar a amizade, já pedir para receber as notificações dessa pessoa */
+    val alsoRequestShare: Boolean = false,
+)
+
 // --- perfil de outra pessoa / bloqueio ----------------------------------
 
 @Serializable

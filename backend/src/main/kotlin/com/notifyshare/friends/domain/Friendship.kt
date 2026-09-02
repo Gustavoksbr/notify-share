@@ -33,6 +33,14 @@ class Friendship(
 
     @Column(name = "responded_at")
     var respondedAt: Instant? = null,
+
+    /** O solicitante quer compartilhar as notificacoes dele com o destinatario. */
+    @Column(name = "also_offer_share", nullable = false)
+    var alsoOfferShare: Boolean = false,
+
+    /** O solicitante quer receber as notificacoes do destinatario. */
+    @Column(name = "also_request_share", nullable = false)
+    var alsoRequestShare: Boolean = false,
 ) {
     fun otherSide(userId: UUID): UUID = if (requesterId == userId) addresseeId else requesterId
 

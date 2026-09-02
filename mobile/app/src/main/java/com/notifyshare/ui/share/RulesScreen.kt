@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -176,18 +178,29 @@ fun RulesScreen(
         }
 
         if (state.dirty) {
-            Text(
-                if (state.saving) "Salvando..." else "Salvar regras",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimary,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            androidx.compose.foundation.layout.Box(
+                contentAlignment = androidx.compose.ui.Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
                     .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(26.dp))
                     .clickable(enabled = !state.saving) { vm.save() }
                     .padding(vertical = 16.dp),
-            )
+            ) {
+                Text(
+                    "Salvar regras",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.alpha(if (state.saving) 0f else 1f),
+                )
+                if (state.saving) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            }
         }
     }
 }

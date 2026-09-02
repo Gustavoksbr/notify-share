@@ -46,7 +46,8 @@ notifyshare:
     secret: ${JWT_SECRET:dev-somente-local-troque-este-segredo-de-32-bytes-ou-mais}
     issuer: notify-share
     access-ttl: PT15M
-    refresh-ttl: P30D
+    refresh-ttl: P90D
+    refresh-reuse-grace: PT60S
 
   google:
     # Client ID "Web application" do Google Cloud. Vazio = login com Google off.
