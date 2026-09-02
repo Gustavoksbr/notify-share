@@ -31,6 +31,8 @@ interface EventRepository : JpaRepository<Event, UUID> {
 
     fun findByOriginUserIdAndDedupKey(originUserId: UUID, dedupKey: String): Event?
 
+    fun findAllByIdIn(ids: Collection<UUID>): List<Event>
+
     @Modifying
     @Query("delete from Event e where e.occurredAt < :cutoff")
     fun deleteOlderThan(@Param("cutoff") cutoff: Instant): Int
@@ -39,6 +41,8 @@ interface EventRepository : JpaRepository<Event, UUID> {
 interface EventDeliveryRepository : JpaRepository<EventDelivery, UUID> {
 
     fun findByEventIdAndGrantId(eventId: UUID, grantId: UUID): EventDelivery?
+
+    fun existsByEventIdAndRecipientId(eventId: UUID, recipientId: UUID): Boolean
 
     @Query(
         """

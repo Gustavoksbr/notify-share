@@ -5,6 +5,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.HTTP
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -166,6 +167,12 @@ interface NotifyShareApi {
         @Path("nickname") nickname: String,
         @Body body: SendMessageBody,
     ): Response<MessageDto>
+
+    @PATCH("conversations/messages/{id}")
+    suspend fun editMessage(@Path("id") id: String, @Body body: EditMessageBody): Response<MessageDto>
+
+    @DELETE("conversations/messages/{id}")
+    suspend fun deleteMessage(@Path("id") id: String): Response<Unit>
 
     @POST("conversations/{nickname}/read")
     suspend fun markConversationRead(@Path("nickname") nickname: String): Response<Unit>

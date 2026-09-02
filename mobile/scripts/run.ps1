@@ -1,21 +1,25 @@
 <#
 .SYNOPSIS
-    Compila, instala, liga a ponte USB e abre o app no aparelho.
+    Compila, instala e abre o app no aparelho, apontado para dev ou producao.
 
 .DESCRIPTION
-    O passo que quase sempre esquecemos e o adb reverse: sem ele o app sobe,
-    mas nao acha o backend e todo login falha com erro de rede. Por isso ele
-    esta aqui dentro, e nao como passo separado.
+    -Target dev  (padrao): app fala com http://localhost:8080 pelo cabo. O passo
+        que quase sempre esquecemos e o `adb reverse` — sem ele o app sobe mas
+        nao acha o backend e todo login falha por rede. Por isso ele esta aqui
+        dentro. -BackendPort troca a ponta no PC (8081 = backend de E2E).
 
-    A porta do PC e configuravel para apontar o mesmo app ora no backend de
-    desenvolvimento (8080), ora no de E2E (8081), sem rebuildar nada.
+    -Target prod: app fala com https://notify-share.onrender.com. Nao precisa de
+        ponte USB — vai direto pela internet.
 
 .EXAMPLE
-    .\scripts\run.ps1
-    .\scripts\run.ps1 -BackendPort 8081     # aponta para o backend de E2E
-    .\scripts\run.ps1 -SkipBuild            # so reinstala o APK que ja existe
+    .\scripts\run.ps1                    # dev, localhost:8080
+    .\scripts\run.ps1 -Target prod       # producao (Render)
+    .\scripts\run.ps1 -BackendPort 8081  # dev apontando no backend de E2E
+    .\scripts\run.ps1 -SkipBuild         # so reinstala o APK que ja existe
 #>
 param(
+    [ValidateSet("dev", "prod")]
+    [string]$Target = "dev",
     [int]   $BackendPort = 8080,
     [switch]$SkipBuild
 )
@@ -31,6 +35,9 @@ if (-not (Test-Path $adb)) {
 $package = "com.notifyshare.debug"
 $activity = "$package/com.notifyshare.MainActivity"
 
+$prodUrl = "https://notify-share.onrender.com/"
+$isProd = $Target -eq "prod"
+
 # --- aparelho ---------------------------------------------------------------
 
 # @() forca array: com um aparelho so, o pipeline devolveria uma string,
@@ -45,6 +52,7 @@ if ($devices.Count -eq 0) {
     exit 1
 }
 Write-Host "Aparelho: $($devices[0].Split()[0])" -ForegroundColor Cyan
+Write-Host "Alvo: $Target $(if ($isProd) { "($prodUrl)" } else { "(localhost:$BackendPort pelo cabo)" })" -ForegroundColor Cyan
 
 # --- build e instalacao -----------------------------------------------------
 
@@ -57,7 +65,9 @@ try {
         & $adb install -r $apk
     } else {
         Write-Host "Compilando e instalando..." -ForegroundColor Cyan
-        & "$mobileRoot\gradlew.bat" :app:installDebug
+        $gradleArgs = @(":app:installDebug")
+        if ($isProd) { $gradleArgs += "-PapiBaseUrl=$prodUrl" }
+        & "$mobileRoot\gradlew.bat" @gradleArgs
     }
     if ($LASTEXITCODE -ne 0) { throw "Instalacao falhou." }
 } finally {
@@ -66,14 +76,28 @@ try {
 
 # --- ponte e abertura -------------------------------------------------------
 
-& $adb reverse tcp:8080 "tcp:$BackendPort" | Out-Null
-Write-Host "Ponte USB: localhost:8080 do aparelho -> localhost:$BackendPort do PC" -ForegroundColor Green
+if ($isProd) {
+    # so remove a ponte se ela existir — chamar --remove numa ponte inexistente
+    # faz o adb escrever no stderr e, com ErrorActionPreference=Stop, o script morre.
+    if ((& $adb reverse --list 2>$null) -match "tcp:8080") {
+        & $adb reverse --remove tcp:8080 2>$null | Out-Null
+        Write-Host "Ponte USB antiga removida (era de um run -Target dev)." -ForegroundColor DarkGray
+    }
+    Write-Host "Sem ponte USB: o app vai direto para $prodUrl" -ForegroundColor Green
+} else {
+    & $adb reverse tcp:8080 "tcp:$BackendPort" | Out-Null
+    Write-Host "Ponte USB: localhost:8080 do aparelho -> localhost:$BackendPort do PC" -ForegroundColor Green
+}
 
 & $adb shell am start -n $activity | Out-Null
 
 Write-Host ""
 Write-Host "App aberto no aparelho." -ForegroundColor Green
-if ($BackendPort -ne 8080) {
-    Write-Host "Atencao: apontando para a porta $BackendPort (backend de E2E)." -ForegroundColor Yellow
+if ($isProd) {
+    Write-Host "Apontando para PRODUCAO (Render). Nao precisa do backend local." -ForegroundColor Yellow
+} else {
+    if ($BackendPort -ne 8080) {
+        Write-Host "Atencao: apontando para a porta $BackendPort (backend de E2E)." -ForegroundColor Yellow
+    }
+    Write-Host "Lembre de deixar o backend rodando, senao o login falha por rede." -ForegroundColor DarkGray
 }
-Write-Host "Lembre de deixar o backend rodando, senao o login falha por rede." -ForegroundColor DarkGray

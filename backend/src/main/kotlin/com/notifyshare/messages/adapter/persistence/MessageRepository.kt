@@ -30,6 +30,8 @@ interface MessageRepository : JpaRepository<Message, UUID> {
     )
     fun markConversationRead(@Param("me") me: UUID, @Param("other") other: UUID, @Param("now") now: Instant): Int
 
-    @Query("select count(m) from Message m where m.recipientId = :me and m.readAt is null")
+    @Query("select count(m) from Message m where m.recipientId = :me and m.readAt is null and m.deletedAt is null")
     fun countUnread(@Param("me") me: UUID): Long
+
+    fun findAllByIdIn(ids: Collection<UUID>): List<Message>
 }

@@ -195,9 +195,19 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val vm: ShareViewModel = viewModel(factory = tabFactory)
                 RequestsScreen(vm = vm, onBack = { nav.popBackStack() })
             }
-            composable("chat/{nickname}") { entry ->
+            composable(
+                "chat/{nickname}?linkedEvent={linkedEvent}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("linkedEvent") {
+                        type = androidx.navigation.NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
                 val nick = entry.arguments?.getString("nickname").orEmpty()
-                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(container, nick))
+                val linked = entry.arguments?.getString("linkedEvent")
+                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(container, nick, linked))
                 ChatScreen(vm = vm, nickname = nick, onBack = { nav.popBackStack() },
                     onOpenNotifications = { nav.navigate("person/$nick") },
                     onOpenProfile = { nav.navigate("user/$nick") })
@@ -212,7 +222,10 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val nick = entry.arguments?.getString("nickname").orEmpty()
                 val vm: PersonNotificationsViewModel =
                     viewModel(factory = PersonNotificationsViewModelFactory(container, nick))
-                PersonNotificationsScreen(vm = vm, nickname = nick, onBack = { nav.popBackStack() })
+                PersonNotificationsScreen(
+                    vm = vm, nickname = nick, onBack = { nav.popBackStack() },
+                    onReplyToNotification = { eventId -> nav.navigate("chat/$nick?linkedEvent=$eventId") },
+                )
             }
             composable("rules/{grantId}/{nickname}") { entry ->
                 val grantId = entry.arguments?.getString("grantId").orEmpty()

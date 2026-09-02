@@ -133,7 +133,12 @@ class PersonNotificationsViewModel(
 }
 
 @Composable
-fun PersonNotificationsScreen(vm: PersonNotificationsViewModel, nickname: String, onBack: () -> Unit) {
+fun PersonNotificationsScreen(
+    vm: PersonNotificationsViewModel,
+    nickname: String,
+    onBack: () -> Unit,
+    onReplyToNotification: (eventId: String) -> Unit = {},
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     var showFilters by remember { mutableStateOf(false) }
 
@@ -188,7 +193,16 @@ fun PersonNotificationsScreen(vm: PersonNotificationsViewModel, nickname: String
                     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         grouped.forEach { (bucket, rows) ->
                             item(key = "h_$bucket") { SectionLabel(bucket) }
-                            items(rows, key = { it.deliveryId }) { row -> Item(row) }
+                            items(rows, key = { it.deliveryId }) { row ->
+                                Item(
+                                    row,
+                                    // "responder uma notificacao": so faz sentido no que a
+                                    // pessoa te envia (received)
+                                    onReply = if (state.direction == "received") {
+                                        { onReplyToNotification(row.eventId) }
+                                    } else null,
+                                )
+                            }
                         }
                         if (state.loadingMore) item(key = "load_more") { LoadMoreFooter() }
                     }
@@ -210,7 +224,7 @@ fun PersonNotificationsScreen(vm: PersonNotificationsViewModel, nickname: String
 }
 
 @Composable
-private fun Item(row: FeedItemDto) {
+private fun Item(row: FeedItemDto, onReply: (() -> Unit)? = null) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
@@ -238,6 +252,16 @@ private fun Item(row: FeedItemDto) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (onReply != null) {
+                Text(
+                    "Responder na conversa",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clickable(onClick = onReply),
+                )
+            }
         }
     }
 }

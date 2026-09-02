@@ -23,7 +23,7 @@ class Message(
     val recipientId: UUID,
 
     @Column(name = "body", nullable = false, columnDefinition = "text")
-    val body: String,
+    var body: String,
 
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
@@ -33,4 +33,19 @@ class Message(
 
     @Column(name = "read_at")
     var readAt: Instant? = null,
+
+    /** Resposta a outra mensagem da mesma conversa. */
+    @Column(name = "reply_to_id")
+    val replyToId: UUID? = null,
+
+    /** "Isto e sobre aquela notificacao": o evento compartilhado. */
+    @Column(name = "linked_event_id")
+    val linkedEventId: UUID? = null,
+
+    @Column(name = "edited_at")
+    var editedAt: Instant? = null,
+
+    /** Soft delete: a linha fica para "mensagem apagada" e para as respostas. */
+    @Column(name = "deleted_at")
+    var deletedAt: Instant? = null,
 )

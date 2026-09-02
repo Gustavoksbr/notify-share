@@ -5,6 +5,7 @@ import com.notifyshare.data.remote.CountDto
 import com.notifyshare.data.remote.MessageDto
 import com.notifyshare.data.remote.NotifyShareApi
 import com.notifyshare.data.remote.PresenceDto
+import com.notifyshare.data.remote.EditMessageBody
 import com.notifyshare.data.remote.SendMessageBody
 import com.notifyshare.data.remote.TimelineItemDto
 import kotlinx.serialization.builtins.ListSerializer
@@ -35,8 +36,19 @@ class ChatRepository(
         }
     }
 
-    suspend fun send(nickname: String, body: String): ApiResult<MessageDto> =
-        apiCall(json) { api.sendMessage(nickname, SendMessageBody(body)) }
+    suspend fun send(
+        nickname: String,
+        body: String,
+        replyToId: String? = null,
+        linkedEventId: String? = null,
+    ): ApiResult<MessageDto> =
+        apiCall(json) { api.sendMessage(nickname, SendMessageBody(body, replyToId, linkedEventId)) }
+
+    suspend fun edit(messageId: String, body: String): ApiResult<MessageDto> =
+        apiCall(json) { api.editMessage(messageId, EditMessageBody(body)) }
+
+    suspend fun delete(messageId: String): ApiResult<Unit> =
+        apiCall(json) { api.deleteMessage(messageId) }
 
     suspend fun markRead(nickname: String): ApiResult<Unit> =
         apiCall(json) { api.markConversationRead(nickname) }

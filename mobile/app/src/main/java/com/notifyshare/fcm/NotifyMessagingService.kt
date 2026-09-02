@@ -26,7 +26,8 @@ class NotifyMessagingService : FirebaseMessagingService() {
                 NotificationPublisher(this).publishMessage(data)
                 AppEvents.signal(AppEvents.CHAT)
             }
-            "message_read", "typing" -> AppEvents.signal(AppEvents.CHAT)
+            "message_read", "message_edited", "message_deleted", "typing" ->
+                AppEvents.signal(AppEvents.CHAT)
             "grant" -> {
                 AppEvents.signal(AppEvents.GRANTS)
                 AppEvents.signal(AppEvents.FRIENDS)

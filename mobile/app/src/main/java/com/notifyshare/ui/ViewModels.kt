@@ -30,11 +30,14 @@ class TabViewModelFactory(private val c: AppContainer) : ViewModelProvider.Facto
 }
 
 /** ViewModels que dependem de um argumento de navegacao. */
-class ChatViewModelFactory(private val c: AppContainer, private val nickname: String) :
-    ViewModelProvider.Factory {
+class ChatViewModelFactory(
+    private val c: AppContainer,
+    private val nickname: String,
+    private val linkedEventId: String? = null,
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ChatViewModel(c.chatRepository, c.realtime, nickname) as T
+        ChatViewModel(c.chatRepository, c.realtime, nickname, linkedEventId) as T
 }
 
 class RulesViewModelFactory(private val c: AppContainer, private val grantId: String) :

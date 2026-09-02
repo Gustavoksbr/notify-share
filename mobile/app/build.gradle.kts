@@ -34,17 +34,24 @@ android {
 
     buildTypes {
         debug {
-            // O aparelho fala com o PC pelo cabo: adb reverse tcp:8080 tcp:8080
-            // faz o localhost do celular chegar no backend rodando aqui.
-            buildConfigField("String", "API_BASE_URL", "\"http://localhost:8080/\"")
-            buildConfigField("String", "WS_URL", "\"ws://localhost:8080/ws\"")
+            // Por padrao o aparelho fala com o PC pelo cabo: adb reverse
+            // tcp:8080 tcp:8080 faz o localhost do celular chegar no backend
+            // rodando aqui. Para apontar o debug para producao (ou o backend de
+            // E2E), passe -PapiBaseUrl=https://notify-share.onrender.com/
+            val apiBaseUrl = (project.findProperty("apiBaseUrl") as String?)
+                ?: "http://localhost:8080/"
+            val wsUrl = (project.findProperty("wsUrl") as String?) ?: apiBaseUrl
+                .replaceFirst("https://", "wss://")
+                .replaceFirst("http://", "ws://")
+                .trimEnd('/') + "/ws"
+            buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+            buildConfigField("String", "WS_URL", "\"$wsUrl\"")
             applicationIdSuffix = ".debug"
         }
         release {
             isMinifyEnabled = false
-            // Trocar pelo host real do backend antes de publicar (Railway/Render/etc).
-            buildConfigField("String", "API_BASE_URL", "\"https://notify-share.example.com/\"")
-            buildConfigField("String", "WS_URL", "\"wss://notify-share.example.com/ws\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://notify-share.onrender.com/\"")
+            buildConfigField("String", "WS_URL", "\"wss://notify-share.onrender.com/ws\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
