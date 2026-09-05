@@ -33,6 +33,7 @@ import com.notifyshare.data.remote.RuleDto
 import com.notifyshare.data.remote.SenderDto
 import com.notifyshare.ui.common.EmptyState
 import com.notifyshare.ui.common.LoadingBox
+import com.notifyshare.ui.common.NotificationAccessWarning
 import com.notifyshare.ui.common.ScreenTitle
 import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.format.friendlyPackage
@@ -152,6 +153,8 @@ fun RulesScreen(
                 )
             },
         )
+
+        NotificationAccessWarning()
 
         when {
             state.loading -> LoadingBox()

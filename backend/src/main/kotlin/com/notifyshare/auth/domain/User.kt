@@ -31,6 +31,10 @@ class User(
     @Column(name = "google_sub", length = 255)
     var googleSub: String? = null,
 
+    /** Quando o usuario aceitou a politica de privacidade. NULL = ainda nao. */
+    @Column(name = "privacy_accepted_at")
+    var privacyAcceptedAt: Instant? = null,
+
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
 

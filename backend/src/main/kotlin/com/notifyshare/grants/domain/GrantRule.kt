@@ -41,6 +41,16 @@ class GrantRule(
     @Column(name = "all_senders", nullable = false)
     var allSenders: Boolean = true,
 
+    /** Termos separados por \n. Se preenchido, so entrega quando o titulo ou o
+     *  corpo contem algum deles (case-insensitive). Vazio = sem filtro. */
+    @Column(name = "text_filters", columnDefinition = "text")
+    var textFilters: String? = null,
+
+    /** Por padrao mensagens que parecem codigo de verificacao (OTP) nao sao
+     *  compartilhadas. Ligar aqui desativa essa protecao para este app. */
+    @Column(name = "allow_codes", nullable = false)
+    var allowCodes: Boolean = false,
+
     @Column(name = "battery_threshold")
     var batteryThreshold: Int? = null,
 

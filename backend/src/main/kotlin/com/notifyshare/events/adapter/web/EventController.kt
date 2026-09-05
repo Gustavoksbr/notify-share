@@ -15,6 +15,7 @@ import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -81,6 +82,24 @@ class EventController(private val events: EventService) {
         ),
     )
 
+    @PostMapping("/test")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(
+        summary = "Envia uma notificacao de teste pelo pipeline real",
+        description = "Entregue a todos os seus compartilhamentos ativos, sem exigir regra. " +
+            "`deliveries` diz quantas pessoas receberam. Diagnostico de ponta a ponta.",
+    )
+    fun sendTest(@AuthenticationPrincipal me: AuthenticatedUser): IngestResult =
+        events.sendTest(me.id)
+
+    @DeleteMapping("/mine")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(
+        summary = "Apaga todo o histórico que voce compartilhou",
+        description = "As entregas nos feeds de quem recebeu caem junto.",
+    )
+    fun deleteMine(@AuthenticationPrincipal me: AuthenticatedUser) = events.deleteMine(me.id)
+
     @GetMapping
     @Operation(summary = "Feed do destinatario", description = "Tudo que voce recebe, com filtros.")
     fun feed(
@@ -129,4 +148,48 @@ class EventController(private val events: EventService) {
     @Operation(summary = "Quantas notificacoes nao lidas")
     fun unread(@AuthenticationPrincipal me: AuthenticatedUser): Map<String, Long> =
         mapOf("count" to events.unreadCount(me.id))
+
+    @GetMapping("/events/{eventId}/location")
+    @Operation(
+        summary = "Descobre em qual pagina esta uma notificacao",
+        description = "Retorna a pagina e posicao de um evento especifico no feed. " +
+            "Usado para scroll direto ao clicar em mensagem que referencia notificacao.",
+    )
+    fun locateEvent(
+        @AuthenticationPrincipal me: AuthenticatedUser,
+        @PathVariable eventId: UUID,
+        @RequestParam(required = false) from: String?,
+        @RequestParam(name = "package", required = false) packageName: String?,
+        @RequestParam(required = false) type: String?,
+        @RequestParam(required = false) sender: String?,
+        @RequestParam(defaultValue = "all") period: String,
+        @RequestParam(defaultValue = "50") pageSize: Int,
+    ) = events.locateEvent(
+        me.id,
+        eventId,
+        FeedFilter(from, packageName, type, sender, period),
+        pageSize,
+    )
+
+    @GetMapping("/events/{eventId}/context")
+    @Operation(
+        summary = "Busca notificacoes ao redor de uma notificacao especifica",
+        description = "Retorna uma janela de eventos centrada no evento especificado. " +
+            "Útil para mostrar contexto ao navegar diretamente para uma notificacao.",
+    )
+    fun feedAroundEvent(
+        @AuthenticationPrincipal me: AuthenticatedUser,
+        @PathVariable eventId: UUID,
+        @RequestParam(required = false) from: String?,
+        @RequestParam(name = "package", required = false) packageName: String?,
+        @RequestParam(required = false) type: String?,
+        @RequestParam(required = false) sender: String?,
+        @RequestParam(defaultValue = "all") period: String,
+        @RequestParam(defaultValue = "50") size: Int,
+    ): List<FeedItemView> = events.feedAroundEvent(
+        me.id,
+        eventId,
+        FeedFilter(from, packageName, type, sender, period),
+        size,
+    )
 }

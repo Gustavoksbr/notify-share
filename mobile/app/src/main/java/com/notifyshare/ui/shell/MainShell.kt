@@ -11,9 +11,13 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -126,6 +130,17 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
         },
     ) { padding ->
         val netState by Connectivity.state.collectAsStateWithLifecycle()
+        val hasActiveShare by container.shareState.hasActiveShare.collectAsStateWithLifecycle(initialValue = false)
+
+        // O acesso a notificacoes some quando o app e reinstalado. Se a pessoa
+        // compartilha apps mas essa permissao caiu, o compartilhamento esta
+        // quebrado sem nenhum aviso — este banner e o aviso.
+        var nlsGranted by remember { mutableStateOf(true) }
+        LifecycleResumeEffect(Unit) {
+            nlsGranted = com.notifyshare.core.NotificationAccess.isGranted(context)
+            onPauseOrDispose { }
+        }
+
         Column(Modifier.padding(padding)) {
             val banner = when (netState) {
                 com.notifyshare.core.NetState.NO_INTERNET -> "Você está sem internet"
@@ -142,6 +157,20 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .padding(vertical = 6.dp),
+                )
+            }
+            if (!nlsGranted && hasActiveShare && showBottomBar) {
+                Text(
+                    "⚠️ O compartilhamento de apps não está funcionando: falta o acesso às " +
+                        "notificações. Toque para ativar.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .clickable { nav.navigate("permissions") }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
             NavHost(
@@ -215,6 +244,7 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(container, nick, linked))
                 ChatScreen(vm = vm, nickname = nick, onBack = { nav.popBackStack() },
                     onOpenNotifications = { nav.navigate("person/$nick") },
+                    onOpenLinkedNotification = { evId -> nav.navigate("person/$nick?highlight=$evId") },
                     onOpenProfile = { nav.navigate("user/$nick") })
             }
             composable("user/{nickname}") { entry ->
@@ -227,12 +257,23 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     onOpenChat = { n -> nav.navigate("chat/$n") },
                 )
             }
-            composable("person/{nickname}") { entry ->
+            composable(
+                "person/{nickname}?highlight={highlight}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("highlight") {
+                        type = androidx.navigation.NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
                 val nick = entry.arguments?.getString("nickname").orEmpty()
+                val highlight = entry.arguments?.getString("highlight")
                 val vm: PersonNotificationsViewModel =
                     viewModel(factory = PersonNotificationsViewModelFactory(container, nick))
                 PersonNotificationsScreen(
                     vm = vm, nickname = nick, onBack = { nav.popBackStack() },
+                    highlightEventId = highlight,
                     onReplyToNotification = { eventId -> nav.navigate("chat/$nick?linkedEvent=$eventId") },
                 )
             }

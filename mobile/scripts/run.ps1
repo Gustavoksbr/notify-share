@@ -1,27 +1,42 @@
 <#
 .SYNOPSIS
-    Compila, instala e abre o app no aparelho, apontado para dev ou producao.
+    Compila e instala o app em um ou varios aparelhos, apontado para dev ou producao.
 
 .DESCRIPTION
     -Target dev  (padrao): app fala com http://localhost:8080 pelo cabo. O passo
         que quase sempre esquecemos e o `adb reverse` — sem ele o app sobe mas
         nao acha o backend e todo login falha por rede. Por isso ele esta aqui
-        dentro. -BackendPort troca a ponta no PC (8081 = backend de E2E).
+        dentro, feito para CADA aparelho. -BackendPort troca a ponta no PC
+        (8081 = backend de E2E).
 
     -Target prod: app fala com https://notify-share.onrender.com. Nao precisa de
-        ponte USB — vai direto pela internet.
+        ponte USB — vai direto pela internet. E o build "release" (pacote
+        com.notifyshare, "Notify Share"), que CONVIVE com o dev
+        (com.notifyshare.debug, "Notify Share DEV") no mesmo aparelho.
+
+    Varios aparelhos:
+      - sem -Serial e sem -AllDevices, com 1 so conectado: usa ele.
+      - sem -Serial e sem -AllDevices, com 2+ conectados: lista e para (escolha).
+      - -Serial <id>: so nesse aparelho.
+      - -AllDevices: em todos os conectados (compila 1x, instala em cada um).
 
 .EXAMPLE
-    .\scripts\run.ps1                    # dev, localhost:8080
-    .\scripts\run.ps1 -Target prod       # producao (Render)
-    .\scripts\run.ps1 -BackendPort 8081  # dev apontando no backend de E2E
-    .\scripts\run.ps1 -SkipBuild         # so reinstala o APK que ja existe
+    .\scripts\run.ps1                          # dev, 1 aparelho
+    .\scripts\run.ps1 -AllDevices              # dev, todos os aparelhos
+    .\scripts\run.ps1 -Serial 6baca47f        # dev, so esse
+    .\scripts\run.ps1 -Target prod -AllDevices # producao, todos
+    .\scripts\run.ps1 -SkipBuild -AllDevices   # so reinstala o APK que ja existe
 #>
 param(
     [ValidateSet("dev", "prod")]
     [string]$Target = "dev",
     [int]   $BackendPort = 8080,
-    [switch]$SkipBuild
+    [string]$Serial,
+    [switch]$AllDevices,
+    [switch]$SkipBuild,
+    # So compila o APK e copia para a raiz do repo. Nao precisa de aparelho.
+    # Use com -Target prod para gerar um APK para instalar na mao noutro celular.
+    [switch]$BuildOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,72 +47,127 @@ if (-not (Test-Path $adb)) {
     throw "adb nao encontrado em $adb. Ajuste o caminho ou instale o platform-tools."
 }
 
-$package = "com.notifyshare.debug"
-$activity = "$package/com.notifyshare.MainActivity"
-
 $prodUrl = "https://notify-share.onrender.com/"
 $isProd = $Target -eq "prod"
 
-# --- aparelho ---------------------------------------------------------------
+if ($isProd) {
+    $package = "com.notifyshare"
+    $gradleTask = ":app:assembleRelease"
+    $apk = Join-Path $mobileRoot "app\build\outputs\apk\release\app-release.apk"
+} else {
+    $package = "com.notifyshare.debug"
+    $gradleTask = ":app:assembleDebug"
+    $apk = Join-Path $mobileRoot "app\build\outputs\apk\debug\app-debug.apk"
+}
+$activity = "$package/com.notifyshare.MainActivity"
 
-# @() forca array: com um aparelho so, o pipeline devolveria uma string,
-# e indexar uma string devolve um Char em vez da linha inteira.
-$devices = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -match "\sdevice$" })
-if ($devices.Count -eq 0) {
+# --- so compilar (para instalar na mao noutro aparelho) -------------------
+
+if ($BuildOnly) {
+    Write-Host "Compilando o APK ($Target)..." -ForegroundColor Cyan
+    Push-Location $mobileRoot
+    try {
+        & "$mobileRoot\gradlew.bat" $gradleTask
+        if ($LASTEXITCODE -ne 0) { throw "Compilacao falhou." }
+    } finally {
+        Pop-Location
+    }
+    $repoRoot = Split-Path -Parent (Split-Path -Parent $mobileRoot)
+    $stamp = Get-Date -Format "yyyyMMdd-HHmm"
+    $dest = Join-Path $repoRoot "notify-share-$Target-$stamp.apk"
+    Copy-Item $apk $dest -Force
     Write-Host ""
-    Write-Host "Nenhum aparelho conectado." -ForegroundColor Red
-    Write-Host "  - conecte o cabo e autorize a depuracao no aparelho" -ForegroundColor DarkGray
-    Write-Host "  - em Xiaomi/HyperOS, ligue tambem 'Instalar via USB'" -ForegroundColor DarkGray
-    Write-Host "    nas opcoes de desenvolvedor" -ForegroundColor DarkGray
+    Write-Host "APK pronto:" -ForegroundColor Green
+    Write-Host "  $dest" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Pacote: $package  (aponta para $(if ($isProd) { $prodUrl } else { "localhost:$BackendPort" }))" -ForegroundColor DarkGray
+    Write-Host "Para instalar noutro celular: copie o .apk para o aparelho (cabo/Drive/WhatsApp)" -ForegroundColor DarkGray
+    Write-Host "e abra pelo gerenciador de arquivos (permita 'instalar apps desconhecidos')." -ForegroundColor DarkGray
+    exit 0
+}
+
+# --- quais aparelhos --------------------------------------------------------
+
+# "<serial>`tdevice" -> pega so os prontos (ignora 'unauthorized' / 'offline').
+$connected = @(
+    & $adb devices | Select-Object -Skip 1 |
+        Where-Object { $_ -match "^(\S+)\s+device$" } |
+        ForEach-Object { ($_ -split "\s+")[0] }
+)
+
+if ($connected.Count -eq 0) {
+    Write-Host ""
+    Write-Host "Nenhum aparelho pronto para depuracao." -ForegroundColor Red
+    & $adb devices -l
+    Write-Host "  - autorize a depuracao USB no aparelho (o pop-up RSA)" -ForegroundColor DarkGray
+    Write-Host "  - em Xiaomi/MIUI, ligue tambem 'Instalar via USB' e 'Depuracao USB (config. de seguranca)'" -ForegroundColor DarkGray
+    Write-Host "  - troque o modo USB de 'MTP/arquivos' para um que permita depuracao" -ForegroundColor DarkGray
     exit 1
 }
-Write-Host "Aparelho: $($devices[0].Split()[0])" -ForegroundColor Cyan
-Write-Host "Alvo: $Target $(if ($isProd) { "($prodUrl)" } else { "(localhost:$BackendPort pelo cabo)" })" -ForegroundColor Cyan
 
-# --- build e instalacao -----------------------------------------------------
-
-Push-Location $mobileRoot
-try {
-    if ($SkipBuild) {
-        $apk = Join-Path $mobileRoot "app\build\outputs\apk\debug\app-debug.apk"
-        if (-not (Test-Path $apk)) { throw "APK nao existe ainda. Rode sem -SkipBuild." }
-        Write-Host "Instalando o APK existente..." -ForegroundColor Cyan
-        & $adb install -r $apk
-    } else {
-        Write-Host "Compilando e instalando..." -ForegroundColor Cyan
-        $gradleArgs = @(":app:installDebug")
-        if ($isProd) { $gradleArgs += "-PapiBaseUrl=$prodUrl" }
-        & "$mobileRoot\gradlew.bat" @gradleArgs
+if ($Serial) {
+    if ($connected -notcontains $Serial) {
+        Write-Host "Aparelho '$Serial' nao esta na lista:" -ForegroundColor Red
+        $connected | ForEach-Object { Write-Host "  $_" }
+        exit 1
     }
-    if ($LASTEXITCODE -ne 0) { throw "Instalacao falhou." }
-} finally {
-    Pop-Location
-}
-
-# --- ponte e abertura -------------------------------------------------------
-
-if ($isProd) {
-    # so remove a ponte se ela existir — chamar --remove numa ponte inexistente
-    # faz o adb escrever no stderr e, com ErrorActionPreference=Stop, o script morre.
-    if ((& $adb reverse --list 2>$null) -match "tcp:8080") {
-        & $adb reverse --remove tcp:8080 2>$null | Out-Null
-        Write-Host "Ponte USB antiga removida (era de um run -Target dev)." -ForegroundColor DarkGray
-    }
-    Write-Host "Sem ponte USB: o app vai direto para $prodUrl" -ForegroundColor Green
+    $targets = @($Serial)
+} elseif ($AllDevices) {
+    $targets = $connected
+} elseif ($connected.Count -eq 1) {
+    $targets = $connected
 } else {
-    & $adb reverse tcp:8080 "tcp:$BackendPort" | Out-Null
-    Write-Host "Ponte USB: localhost:8080 do aparelho -> localhost:$BackendPort do PC" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "$($connected.Count) aparelhos conectados. Escolha:" -ForegroundColor Yellow
+    & $adb devices -l | Select-Object -Skip 1 | Where-Object { $_ -match "\sdevice " } | ForEach-Object { Write-Host "  $_" }
+    Write-Host ""
+    Write-Host "  .\scripts\run.ps1 -Serial <id>     # um aparelho" -ForegroundColor DarkGray
+    Write-Host "  .\scripts\run.ps1 -AllDevices      # todos" -ForegroundColor DarkGray
+    exit 1
 }
 
-& $adb shell am start -n $activity | Out-Null
+Write-Host "Alvo: $Target $(if ($isProd) { "($prodUrl)" } else { "(localhost:$BackendPort pelo cabo)" })" -ForegroundColor Cyan
+Write-Host "Aparelhos: $($targets -join ', ')" -ForegroundColor Cyan
+
+# --- build (uma vez so) ----------------------------------------------------
+
+if (-not $SkipBuild) {
+    Write-Host "Compilando o APK ($gradleTask)..." -ForegroundColor Cyan
+    Push-Location $mobileRoot
+    try {
+        & "$mobileRoot\gradlew.bat" $gradleTask
+        if ($LASTEXITCODE -ne 0) { throw "Compilacao falhou." }
+    } finally {
+        Pop-Location
+    }
+}
+if (-not (Test-Path $apk)) { throw "APK nao existe em $apk. Rode sem -SkipBuild." }
+
+# --- instala e abre em cada aparelho -------------------------------------
+
+foreach ($t in $targets) {
+    Write-Host ""
+    Write-Host "== $t ==" -ForegroundColor Green
+    & $adb -s $t install -r $apk
+    if ($LASTEXITCODE -ne 0) { Write-Host "  instalacao falhou em $t" -ForegroundColor Red; continue }
+
+    if ($isProd) {
+        if ((& $adb -s $t reverse --list 2>$null) -match "tcp:8080") {
+            & $adb -s $t reverse --remove tcp:8080 2>$null | Out-Null
+        }
+        Write-Host "  sem ponte USB: vai direto para $prodUrl" -ForegroundColor DarkGray
+    } else {
+        & $adb -s $t reverse tcp:8080 "tcp:$BackendPort" | Out-Null
+        Write-Host "  ponte: localhost:8080 (aparelho) -> localhost:$BackendPort (PC)" -ForegroundColor DarkGray
+    }
+
+    & $adb -s $t shell am start -n $activity | Out-Null
+    Write-Host "  app aberto." -ForegroundColor Green
+}
 
 Write-Host ""
-Write-Host "App aberto no aparelho." -ForegroundColor Green
 if ($isProd) {
-    Write-Host "Apontando para PRODUCAO (Render). Nao precisa do backend local." -ForegroundColor Yellow
+    Write-Host "Producao (Render). Nao precisa do backend local." -ForegroundColor Yellow
 } else {
-    if ($BackendPort -ne 8080) {
-        Write-Host "Atencao: apontando para a porta $BackendPort (backend de E2E)." -ForegroundColor Yellow
-    }
-    Write-Host "Lembre de deixar o backend rodando, senao o login falha por rede." -ForegroundColor DarkGray
+    Write-Host "Deixe o backend rodando em localhost:$BackendPort, senao o login falha por rede." -ForegroundColor DarkGray
 }

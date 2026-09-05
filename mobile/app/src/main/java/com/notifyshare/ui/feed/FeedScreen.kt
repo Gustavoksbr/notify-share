@@ -279,13 +279,20 @@ private fun FeedCard(row: FeedItemDto, onClick: () -> Unit) {
                     color = NotifyShareColors.muted,
                 )
             }
+            com.notifyshare.ui.format.eventGroup(row)?.let { g ->
+                Text(
+                    "no grupo $g",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NotifyShareColors.muted,
+                )
+            }
             Text(
                 eventBody(row),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "via @${row.from}",
+                "via @${row.from}" + if (!row.notify) " · só no feed" else "",
                 style = MaterialTheme.typography.labelSmall,
                 color = NotifyShareColors.muted,
                 modifier = Modifier.padding(top = 4.dp),

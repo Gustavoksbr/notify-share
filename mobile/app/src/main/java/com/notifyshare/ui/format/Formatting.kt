@@ -16,12 +16,16 @@ private val zone: ZoneId get() = ZoneId.systemDefault()
 private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 private val dateFmt: DateTimeFormatter =
     DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+private val fullFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy 'às' HH:mm")
 
 fun parseInstantOrNull(iso: String?): Instant? =
     iso?.let { runCatching { Instant.parse(it) }.getOrNull() }
 
 fun shortTime(iso: String): String =
     parseInstantOrNull(iso)?.atZone(zone)?.format(timeFmt) ?: ""
+
+fun fullDateTime(iso: String): String =
+    parseInstantOrNull(iso)?.atZone(zone)?.format(fullFmt) ?: iso
 
 fun relativeShort(iso: String?): String {
     val instant = parseInstantOrNull(iso) ?: return ""
@@ -72,3 +76,12 @@ fun eventBody(row: FeedItemDto): String = when (row.mode) {
     "sender_only" -> "Conteudo oculto — so o remetente"
     else -> row.contentObject()?.str("body") ?: "Nova notificacao"
 }
+
+/** Nome do grupo, quando a notificacao veio de uma conversa em grupo. */
+fun eventGroup(row: FeedItemDto): String? = row.contentObject()?.str("group")
+
+/** Remetente dentro do app (a pessoa que mandou a mensagem), sem o nome do app. */
+fun eventSender(row: FeedItemDto): String? = row.contentObject()?.str("sender")
+
+/** Titulo cru da notificacao original (fallback quando nao ha sender). */
+fun eventRawTitle(row: FeedItemDto): String? = row.contentObject()?.str("title")

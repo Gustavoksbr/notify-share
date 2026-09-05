@@ -44,6 +44,9 @@ data class RegisterRequest(
     @field:Schema(description = "Minimo de 8 caracteres.", example = "senha-forte-123")
     val password: String = "",
 
+    @field:Schema(description = "Aceite da Politica de Privacidade. Obrigatorio.", example = "true")
+    val acceptedPrivacy: Boolean = false,
+
     @field:Schema(
         description = "Rotulo do aparelho, so para voce reconhecer a sessao depois.",
         example = "Redmi 12C",
@@ -87,6 +90,9 @@ data class GoogleLoginRequest(
     )
     val nickname: String? = null,
 
+    @field:Schema(description = "Aceite da Politica de Privacidade. Obrigatorio ao criar conta nova.", example = "true")
+    val acceptedPrivacy: Boolean = false,
+
     @field:Schema(example = "Redmi 12C")
     val deviceLabel: String? = null,
 )
@@ -105,6 +111,7 @@ data class MeResponse(
     val createdAt: Instant,
     @field:Schema(description = "Conta vinculada ao login com Google.") val google: Boolean = false,
     @field:Schema(description = "Conta tem senha (da para entrar sem o Google).") val hasPassword: Boolean = true,
+    @field:Schema(description = "Ja aceitou a Politica de Privacidade.") val privacyAccepted: Boolean = true,
 )
 
 @Schema(description = "Par de tokens emitido")
@@ -128,6 +135,7 @@ private fun User.toMe() = MeResponse(
     createdAt = createdAt,
     google = googleSub != null,
     hasPassword = passwordHash != null,
+    privacyAccepted = privacyAcceptedAt != null,
 )
 
 private fun IssuedTokens.toResponse() =
@@ -154,7 +162,9 @@ class AuthController(private val authService: AuthService) {
         ApiResponse(responseCode = "409", description = "code=nickname_taken ou email_taken"),
     )
     fun register(@Valid @RequestBody body: RegisterRequest): TokenResponse =
-        authService.register(body.nickname, body.email, body.password, body.deviceLabel).toResponse()
+        authService.register(
+            body.nickname, body.email, body.password, body.deviceLabel, body.acceptedPrivacy,
+        ).toResponse()
 
     @PostMapping("/login")
     @Operation(
@@ -182,7 +192,9 @@ class AuthController(private val authService: AuthService) {
         ApiResponse(responseCode = "409", description = "code=needs_nickname (message=e-mail) ou nickname_taken"),
     )
     fun google(@Valid @RequestBody body: GoogleLoginRequest): TokenResponse =
-        authService.loginWithGoogle(body.idToken, body.nickname, body.deviceLabel).toResponse()
+        authService.loginWithGoogle(
+            body.idToken, body.nickname, body.deviceLabel, body.acceptedPrivacy,
+        ).toResponse()
 
     @PostMapping("/refresh")
     @Operation(

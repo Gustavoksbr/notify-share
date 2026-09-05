@@ -40,6 +40,8 @@ class EventRouter(
         val active = grants.activeOutbound(event.originUserId)
         if (active.isEmpty()) return 0
 
+        if (event.packageName == Event.PKG_TEST) return fanOutTest(event, active)
+
         val ruleByGrant = grantRules.findAllByGrantIdIn(active.map { it.id })
             .filter { it.packageName == event.packageName }
             .associateBy { it.grantId }
@@ -86,12 +88,66 @@ class EventRouter(
         return toSave.size
     }
 
+    /**
+     * "Enviar notificacao de teste": entrega a TODOS os grants ativos, sem
+     * exigir regra e ignorando o mute do destinatario — o objetivo e provar que
+     * a entrega funciona, entao ela precisa aparecer de qualquer jeito.
+     */
+    private fun fanOutTest(event: Event, active: List<com.notifyshare.grants.domain.Grant>): Int {
+        val toSave = active.map {
+            EventDelivery(
+                eventId = event.id,
+                grantId = it.id,
+                recipientId = it.recipientId,
+                deliveredMode = GrantRule.CONTENT,
+            )
+        }
+        if (toSave.isEmpty()) return 0
+        deliveries.saveAll(toSave)
+        val originNickname = users.findById(event.originUserId).map { it.nickname }.orElse("")
+        toSave.forEach { push(event, it, originNickname) }
+        log.debug("teste {} entregue a {}", event.id, toSave.size)
+        return toSave.size
+    }
+
     private fun passes(rule: GrantRule, event: Event, allowedSenders: Set<String>): Boolean {
         if (!rule.enabled || rule.contentMode == GrantRule.PAUSED) return false
         if (event.eventType == Event.TYPE_MESSAGE && !rule.allSenders) {
-            return event.senderHash != null && event.senderHash in allowedSenders
+            if (event.senderHash == null || event.senderHash !in allowedSenders) return false
+        }
+        if (event.eventType == Event.TYPE_MESSAGE) {
+            val text = messageText(event.content)
+            // protecao contra codigo de verificacao (OTP), opt-out por regra
+            if (!rule.allowCodes && looksLikeVerificationCode(text)) return false
+            // filtro por texto (nome de canal do YouTube etc.)
+            val filters = rule.textFilters?.split("\n")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+            if (filters.isNotEmpty() && filters.none { text.contains(it, ignoreCase = true) }) return false
         }
         return true
+    }
+
+    /** Junta titulo + corpo do JSON de conteudo. Regex de proposito: nunca faz o
+     *  servidor "entender" a mensagem, so olha se ha um codigo ou um termo. */
+    private fun messageText(content: String?): String {
+        if (content.isNullOrBlank()) return ""
+        return Regex("\"(?:title|body)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+            .findAll(content)
+            .joinToString(" ") { it.groupValues[1] }
+    }
+
+    private val codeKeywords = listOf(
+        "codigo", "código", "code", "verification", "verificacao", "verificação",
+        "senha", "password", "otp", "token", "2fa", "acesso", "confirmacao",
+        "confirmação", "pin", "one-time", "login",
+    )
+
+    private fun looksLikeVerificationCode(text: String): Boolean {
+        if (text.isBlank()) return false
+        val lower = text.lowercase()
+        val hasKeyword = codeKeywords.any { it in lower }
+        if (!hasKeyword) return false
+        // um numero de 4 a 8 digitos "solto" (nao parte de um numero maior)
+        return Regex("(?<!\\d)\\d{4,8}(?!\\d)").containsMatchIn(text)
     }
 
     private fun push(event: Event, delivery: EventDelivery, originNickname: String) {

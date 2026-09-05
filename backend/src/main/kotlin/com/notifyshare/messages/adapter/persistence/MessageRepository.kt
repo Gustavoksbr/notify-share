@@ -34,4 +34,7 @@ interface MessageRepository : JpaRepository<Message, UUID> {
     fun countUnread(@Param("me") me: UUID): Long
 
     fun findAllByIdIn(ids: Collection<UUID>): List<Message>
+
+    @Query("select m from Message m where m.senderId = :userId or m.recipientId = :userId order by m.createdAt desc")
+    fun findAllInvolving(@Param("userId") userId: UUID): List<Message>
 }

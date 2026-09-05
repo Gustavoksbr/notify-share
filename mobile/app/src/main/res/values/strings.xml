@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Notify Share</string>
+    <!-- app_name vem do build.gradle.kts (resValue por buildType): "Notify Share DEV"
+         no debug, "Notify Share" no release. Assim os dois convivem no aparelho. -->
 </resources>

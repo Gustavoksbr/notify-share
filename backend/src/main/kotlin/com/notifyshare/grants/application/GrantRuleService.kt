@@ -8,6 +8,8 @@ import com.notifyshare.grants.domain.Grant
 import com.notifyshare.grants.domain.GrantAudit
 import com.notifyshare.grants.domain.GrantRule
 import com.notifyshare.grants.domain.GrantRuleSender
+import com.notifyshare.push.application.PushMessage
+import com.notifyshare.push.application.PushNotifier
 import com.notifyshare.shared.web.ForbiddenException
 import com.notifyshare.shared.web.NotFoundException
 import com.notifyshare.shared.web.ValidationException
@@ -24,6 +26,8 @@ data class RuleView(
     val allSenders: Boolean,
     val batteryThreshold: Int?,
     val senders: List<SenderView>,
+    val textFilters: List<String> = emptyList(),
+    val allowCodes: Boolean = false,
 )
 
 data class SenderInput(val senderHash: String, val senderLabel: String? = null)
@@ -35,6 +39,8 @@ data class RuleInput(
     val allSenders: Boolean = true,
     val batteryThreshold: Int? = null,
     val senders: List<SenderInput> = emptyList(),
+    val textFilters: List<String> = emptyList(),
+    val allowCodes: Boolean = false,
 )
 
 @Service
@@ -43,6 +49,7 @@ class GrantRuleService(
     private val rules: GrantRuleRepository,
     private val ruleSenders: GrantRuleSenderRepository,
     private val audits: GrantAuditRepository,
+    private val pushNotifier: PushNotifier,
 ) {
 
     @Transactional(readOnly = true)
@@ -76,6 +83,10 @@ class GrantRuleService(
                     enabled = input.enabled,
                     contentMode = input.contentMode,
                     allSenders = input.allSenders,
+                    textFilters = input.textFilters
+                        .map { it.trim() }.filter { it.isNotEmpty() }
+                        .distinct().take(30).joinToString("\n").ifBlank { null },
+                    allowCodes = input.allowCodes,
                     batteryThreshold = input.batteryThreshold?.coerceIn(1, 99),
                 )
             )
@@ -99,6 +110,13 @@ class GrantRuleService(
                 detail = auditDetail(inputs),
             )
         )
+        // os dois lados releem na hora (contagem de apps, "notifica / so feed")
+        val frame = PushMessage(
+            type = "grant",
+            data = mapOf("grantId" to grantId.toString(), "action" to "rules_changed"),
+        )
+        pushNotifier.notifyUser(grant.sharerId, frame)
+        pushNotifier.notifyUser(grant.recipientId, frame)
         return toViews(rules.findAllByGrantId(grantId))
     }
 
@@ -123,6 +141,8 @@ class GrantRuleService(
                     allSenders = r.allSenders,
                     batteryThreshold = r.batteryThreshold,
                     senders = sendersByRule[r.id].orEmpty().map { SenderView(it.senderHash, it.senderLabel) },
+                    textFilters = r.textFilters?.split("\n")?.filter { it.isNotBlank() }.orEmpty(),
+                    allowCodes = r.allowCodes,
                 )
             }
             .sortedBy { it.packageName }

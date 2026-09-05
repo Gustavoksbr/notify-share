@@ -34,6 +34,8 @@ data class LinkedEventRef(
     val packageName: String,
     val eventType: String,
     val occurredAt: Instant,
+    val senderHash: String?,
+    val preview: String?,
 )
 
 /**
@@ -209,7 +211,12 @@ class MessageService(
                     )
                 },
                 linkedEvent = m.linkedEventId?.let { linkedEvents[it] }?.let { e ->
-                    LinkedEventRef(e.id, e.packageName, e.eventType, e.occurredAt)
+                    // Extrair preview do content JSON se disponível
+                    val preview = e.content?.let { json ->
+                        // Busca campos comuns no JSON: text, body, title
+                        Regex(""""(?:text|body|title)"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)?.take(100)
+                    }
+                    LinkedEventRef(e.id, e.packageName, e.eventType, e.occurredAt, e.senderHash, preview)
                 },
             )
         }

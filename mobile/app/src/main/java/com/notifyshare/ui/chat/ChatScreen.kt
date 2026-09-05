@@ -219,9 +219,25 @@ fun ChatScreen(
     nickname: String,
     onBack: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onOpenLinkedNotification: (eventId: String) -> Unit,
     onOpenProfile: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var highlightId by remember { mutableStateOf<String?>(null) }
+
+    // Toca no trecho da mensagem respondida -> rola ate ela e pisca o fundo.
+    fun jumpToMessage(id: String) {
+        val idx = state.items.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        scope.launch {
+            listState.animateScrollToItem(idx)
+            highlightId = id
+            kotlinx.coroutines.delay(1800)
+            highlightId = null
+        }
+    }
 
     Column(
         Modifier
@@ -283,6 +299,7 @@ fun ChatScreen(
             state.refreshing, vm::refresh, Modifier.weight(1f),
         ) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 reverseLayout = true,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -294,10 +311,12 @@ fun ChatScreen(
                         else -> MessageBubble(
                             item = item,
                             deleting = item.id in state.deleting,
+                            highlighted = item.id == highlightId,
                             onReply = { vm.startReply(item) },
                             onEdit = { vm.startEdit(item) },
                             onDelete = { vm.deleteMessage(item) },
-                            onOpenLinked = onOpenNotifications,
+                            onReplyTap = ::jumpToMessage,
+                            onOpenLinked = { evId -> onOpenLinkedNotification(evId) },
                         )
                     }
                 }
@@ -433,13 +452,21 @@ private fun ContextBar(title: String, preview: String, onClose: () -> Unit) {
 private fun MessageBubble(
     item: TimelineItemDto,
     deleting: Boolean,
+    highlighted: Boolean,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onOpenLinked: () -> Unit,
+    onReplyTap: (messageId: String) -> Unit,
+    onOpenLinked: (eventId: String) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     val mineColors = item.mine
+    val baseColor = if (mineColors) MaterialTheme.colorScheme.primaryContainer
+    else MaterialTheme.colorScheme.surfaceContainerHigh
+    val bubbleColor by androidx.compose.animation.animateColorAsState(
+        if (highlighted) MaterialTheme.colorScheme.tertiaryContainer else baseColor,
+        label = "bubbleHighlight",
+    )
 
     Row(
         Modifier.fillMaxWidth(),
@@ -450,13 +477,9 @@ private fun MessageBubble(
                 modifier = Modifier
                     .widthIn(max = 300.dp)
                     .alpha(if (deleting) 0.4f else 1f)
-                    .background(
-                        if (mineColors) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        RoundedCornerShape(16.dp),
-                    )
+                    .background(bubbleColor, RoundedCornerShape(16.dp))
                     .combinedClickable(
-                        onClick = { if (item.linkedEvent != null) onOpenLinked() },
+                        onClick = { item.linkedEvent?.let { onOpenLinked(it.eventId) } },
                         onLongClick = { if (!item.deleted && !deleting) menu = true },
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -469,6 +492,7 @@ private fun MessageBubble(
                                 MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
                                 RoundedCornerShape(8.dp),
                             )
+                            .clickable { onReplyTap(r.id) }
                             .padding(horizontal = 8.dp, vertical = 5.dp),
                     ) {
                         Text(
@@ -491,6 +515,7 @@ private fun MessageBubble(
                                 MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
                                 RoundedCornerShape(8.dp),
                             )
+                            .clickable { onOpenLinked(e.eventId) }
                             .padding(horizontal = 8.dp, vertical = 5.dp),
                     ) {
                         com.notifyshare.ui.common.AppIcon(e.packageName, size = 18.dp)

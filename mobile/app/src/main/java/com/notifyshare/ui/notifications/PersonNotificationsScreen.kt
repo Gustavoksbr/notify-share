@@ -5,9 +5,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -35,14 +38,19 @@ import com.notifyshare.ui.common.InfiniteListHandler
 import com.notifyshare.ui.common.LoadMoreFooter
 import com.notifyshare.ui.common.LoadingBox
 import com.notifyshare.ui.common.NotificationFiltersSheet
+import com.notifyshare.ui.common.PillButton
 import com.notifyshare.ui.common.PullRefresh
 import com.notifyshare.ui.common.ScreenTitle
 import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.format.dayBucket
 import com.notifyshare.ui.format.eventBody
+import com.notifyshare.ui.format.eventGroup
+import com.notifyshare.ui.format.eventSender
 import com.notifyshare.ui.format.eventTitle
+import com.notifyshare.ui.format.friendlyPackage
 import com.notifyshare.ui.format.shortTime
 import com.notifyshare.ui.theme.NotifyShareColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -132,15 +140,35 @@ class PersonNotificationsViewModel(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun PersonNotificationsScreen(
     vm: PersonNotificationsViewModel,
     nickname: String,
     onBack: () -> Unit,
+    highlightEventId: String? = null,
     onReplyToNotification: (eventId: String) -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var showFilters by remember { mutableStateOf(false) }
+    var detailOf by remember { mutableStateOf<FeedItemDto?>(null) }
+    var highlightId by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
+    // Chegou aqui vindo de "responder uma notificação" no chat: rola ate a
+    // notificação em questao e pisca o fundo.
+    androidx.compose.runtime.LaunchedEffect(highlightEventId, state.items) {
+        val target = highlightEventId ?: return@LaunchedEffect
+        if (state.items.none { it.eventId == target }) return@LaunchedEffect
+        val flat = flatIndexOfEvent(state.items, target)
+        if (flat >= 0) {
+            listState.animateScrollToItem(flat)
+            highlightId = state.items.firstOrNull { it.eventId == target }?.deliveryId
+            delay(2000)
+            highlightId = null
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("@$nickname", onBack = onBack, trailing = {
@@ -187,7 +215,6 @@ fun PersonNotificationsScreen(
                         }
                     }
                 } else {
-                    val listState = rememberLazyListState()
                     InfiniteListHandler(listState, onLoadMore = vm::loadMore)
                     val grouped = state.items.groupBy { dayBucket(it.occurredAt) }
                     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -196,11 +223,8 @@ fun PersonNotificationsScreen(
                             items(rows, key = { it.deliveryId }) { row ->
                                 Item(
                                     row,
-                                    // "responder uma notificacao": so faz sentido no que a
-                                    // pessoa te envia (received)
-                                    onReply = if (state.direction == "received") {
-                                        { onReplyToNotification(row.eventId) }
-                                    } else null,
+                                    highlighted = row.deliveryId == highlightId,
+                                    onClick = { detailOf = row },
                                 )
                             }
                         }
@@ -221,16 +245,48 @@ fun PersonNotificationsScreen(
             onClear = { vm.clearFilter(); showFilters = false },
         )
     }
+
+    detailOf?.let { row ->
+        NotificationDetailSheet(
+            row = row,
+            nickname = nickname,
+            // responder so no que a pessoa te envia
+            onReply = if (state.direction == "received") {
+                { onReplyToNotification(row.eventId); detailOf = null }
+            } else null,
+            onDismiss = { detailOf = null },
+        )
+    }
+}
+
+/** Indice achatado (headers + linhas) do evento na LazyColumn agrupada por dia. */
+private fun flatIndexOfEvent(items: List<FeedItemDto>, eventId: String): Int {
+    var idx = 0
+    items.groupBy { dayBucket(it.occurredAt) }.forEach { (_, rows) ->
+        idx++ // header do dia
+        for (r in rows) {
+            if (r.eventId == eventId) return idx
+            idx++
+        }
+    }
+    return -1
 }
 
 @Composable
-private fun Item(row: FeedItemDto, onReply: (() -> Unit)? = null) {
+private fun Item(row: FeedItemDto, highlighted: Boolean, onClick: () -> Unit) {
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (highlighted) MaterialTheme.colorScheme.tertiaryContainer
+        else MaterialTheme.colorScheme.surfaceContainer,
+        label = "notifHighlight",
+    )
+    val group = eventGroup(row)
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
+            .background(bg, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
             .padding(13.dp),
     ) {
         com.notifyshare.ui.common.AppIcon(row.packageName, size = 32.dp, modifier = Modifier.padding(top = 2.dp))
@@ -247,21 +303,95 @@ private fun Item(row: FeedItemDto, onReply: (() -> Unit)? = null) {
                     color = NotifyShareColors.muted,
                 )
             }
+            if (group != null) {
+                Text(
+                    "no grupo $group",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NotifyShareColors.muted,
+                )
+            }
             Text(
                 eventBody(row),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (onReply != null) {
+            if (!row.notify) {
                 Text(
-                    "Responder na conversa",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(top = 6.dp)
-                        .clickable(onClick = onReply),
+                    "só no feed — sem aviso",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NotifyShareColors.muted,
                 )
             }
         }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun NotificationDetailSheet(
+    row: FeedItemDto,
+    nickname: String,
+    onReply: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(bottom = 12.dp),
+            ) {
+                com.notifyshare.ui.common.AppIcon(row.packageName, size = 40.dp)
+                Column {
+                    Text(eventTitle(row), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        friendlyPackage(row.packageName),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = NotifyShareColors.muted,
+                    )
+                }
+            }
+
+            DetailLine("De", "@$nickname")
+            eventGroup(row)?.let { DetailLine("Grupo", it) }
+            eventSender(row)?.let { DetailLine("Remetente", it) }
+            DetailLine("Quando", com.notifyshare.ui.format.fullDateTime(row.occurredAt))
+            DetailLine(
+                "Como você recebe",
+                if (row.notify) "Notifica você + entra no feed" else "Só no feed — sem aviso",
+            )
+            DetailLine(
+                "Conteúdo compartilhado",
+                if (row.mode == "sender_only") "Só o remetente (sem texto)" else "Texto completo",
+            )
+            DetailLine("Lida", if (row.read) "Sim" else "Não")
+
+            if (onReply != null) {
+                Spacer(Modifier.height(16.dp))
+                com.notifyshare.ui.common.PillButton("Responder na conversa", onReply)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = NotifyShareColors.muted,
+            modifier = Modifier.width(150.dp),
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
 }

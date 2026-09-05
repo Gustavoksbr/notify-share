@@ -33,6 +33,8 @@ data class FeedItemDto(
     val read: Boolean = false,
     /** presente so quando mode == content */
     val content: String? = null,
+    /** false = quem recebe silenciou esse app: entra no feed mas nao avisa. */
+    val notify: Boolean = true,
 )
 
 @Serializable

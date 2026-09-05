@@ -61,11 +61,11 @@ class EventFlowTest {
     /** origem e destino ja amigos, grant ativo, regras aplicadas. Devolve tokens. */
     private fun scenario(tag: String): Pair<String, String> {
         val origin = field(
-            post("/auth/register", json = """{"nickname":"o$tag","email":"o$tag@t.com","password":"senha-forte-123"}""").body,
+            post("/auth/register", json = """{"nickname":"o$tag","email":"o$tag@t.com","password":"senha-forte-123","acceptedPrivacy":true}""").body,
             "accessToken",
         )
         val dest = field(
-            post("/auth/register", json = """{"nickname":"d$tag","email":"d$tag@t.com","password":"senha-forte-123"}""").body,
+            post("/auth/register", json = """{"nickname":"d$tag","email":"d$tag@t.com","password":"senha-forte-123","acceptedPrivacy":true}""").body,
             "accessToken",
         )
         post("/friends/requests", origin, """{"nickname":"d$tag"}""")
@@ -77,7 +77,8 @@ class EventFlowTest {
             "/grants/$gid/rules", origin,
             """{"rules":[
                 {"packageName":"com.whatsapp","contentMode":"content","allSenders":false,"senders":[{"senderHash":"hJose"}]},
-                {"packageName":"org.telegram.messenger","contentMode":"sender_only","allSenders":true}
+                {"packageName":"org.telegram.messenger","contentMode":"sender_only","allSenders":true},
+                {"packageName":"com.test","contentMode":"content","allSenders":true}
             ]}""",
         )
         return origin to dest
@@ -157,6 +158,84 @@ class EventFlowTest {
 
         assertEquals(204, put("/grants/$gid/notify-rules", dest, """{"packageName":"com.whatsapp","notify":true}""").status)
         assertTrue(get("/grants/$gid/notify-rules", dest).body.contains("\"notify\":true"))
+    }
+
+    @Test
+    fun `codigo de verificacao nao e compartilhado por padrao`() {
+        val (origin, dest) = scenario("otp")
+        val code = post(
+            "/events", origin,
+            """{"packageName":"com.test","eventType":"message","dedupKey":"c1","content":"{\"body\":\"Seu codigo de acesso e 484930\"}"}""",
+        )
+        val normal = post(
+            "/events", origin,
+            """{"packageName":"com.test","eventType":"message","dedupKey":"c2","content":"{\"body\":\"vou no mercado, volto em 20min\"}"}""",
+        )
+        assertTrue(code.body.contains("\"deliveries\":0"), code.body)
+        assertTrue(normal.body.contains("\"deliveries\":1"), normal.body)
+    }
+
+    @Test
+    fun `allowCodes libera a mensagem com codigo`() {
+        val (origin, dest) = scenario("otp2")
+        val gid = field(get("/grants?role=sharer", origin).body, "id")
+        put(
+            "/grants/$gid/rules", origin,
+            """{"rules":[{"packageName":"com.test","contentMode":"content","allSenders":true,"allowCodes":true}]}""",
+        )
+        val code = post(
+            "/events", origin,
+            """{"packageName":"com.test","eventType":"message","dedupKey":"c3","content":"{\"body\":\"codigo 123456\"}"}""",
+        )
+        assertTrue(code.body.contains("\"deliveries\":1"), code.body)
+    }
+
+    @Test
+    fun `filtro por texto entrega so o que casa`() {
+        val (origin, dest) = scenario("txt")
+        val gid = field(get("/grants?role=sharer", origin).body, "id")
+        put(
+            "/grants/$gid/rules", origin,
+            """{"rules":[{"packageName":"com.test","contentMode":"content","allSenders":true,"textFilters":["Manual do Mundo"]}]}""",
+        )
+        val match = post(
+            "/events", origin,
+            """{"packageName":"com.test","eventType":"message","dedupKey":"f1","content":"{\"title\":\"Manual do Mundo publicou um video\"}"}""",
+        )
+        val noMatch = post(
+            "/events", origin,
+            """{"packageName":"com.test","eventType":"message","dedupKey":"f2","content":"{\"title\":\"Outro canal publicou\"}"}""",
+        )
+        assertTrue(match.body.contains("\"deliveries\":1"), match.body)
+        assertTrue(noMatch.body.contains("\"deliveries\":0"), noMatch.body)
+    }
+
+    @Test
+    fun `notificacao de teste entrega a todos os grants sem regra`() {
+        val (origin, dest) = scenario("test")
+        // sem regra pra "system:test" — mesmo assim entrega
+        val r = post("/events/test", origin)
+        assertEquals(202, r.status)
+        assertTrue(r.body.contains("\"deliveries\":1"), r.body)
+        assertTrue(get("/events", dest).body.contains("Notify Share"))
+    }
+
+    @Test
+    fun `apagar meu historico limpa o feed de quem recebeu`() {
+        val (origin, dest) = scenario("del")
+        post(
+            "/events", origin,
+            """{"packageName":"com.test","eventType":"message","dedupKey":"d1","content":"{\"body\":\"ola\"}"}""",
+        )
+        assertEquals(1, Regex("\"deliveryId\"").findAll(get("/events", dest).body).count())
+        assertEquals(204, delete("/events/mine", origin).status)
+        assertEquals(0, Regex("\"deliveryId\"").findAll(get("/events", dest).body).count())
+    }
+
+    private fun delete(path: String, token: String): Res {
+        val r = client.delete().uri(path).header("Authorization", "Bearer $token")
+            .exchange().expectBody(String::class.java).returnResult()
+        return Res(r.status.value(), r.responseBody ?: "")
     }
 
     @Test

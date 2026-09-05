@@ -49,6 +49,19 @@ data class FeedItemView(
     val mode: String,
     val read: Boolean,
     val content: String?,
+    /** false quando quem recebe silenciou esse app: entra no feed mas nao avisa. */
+    val notify: Boolean,
+)
+
+/** Informacao sobre a posicao de um evento especifico no feed. */
+data class EventLocation(
+    val eventId: UUID,
+    /** Pagina onde o evento esta (base 0). */
+    val page: Int,
+    /** Posicao dentro da pagina (base 0). */
+    val indexInPage: Int,
+    /** Total de eventos antes deste (considerando filtros). */
+    val totalBefore: Long,
 )
 
 @Service
@@ -57,6 +70,7 @@ class EventService(
     private val deliveries: EventDeliveryRepository,
     private val users: UserRepository,
     private val ingestor: EventIngestor,
+    private val recipientMutes: com.notifyshare.grants.adapter.persistence.RecipientAppMuteRepository,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -86,6 +100,26 @@ class EventService(
             IngestResult(existing?.id ?: UUID.randomUUID(), 0, deduped = true)
         }
     }
+
+    /**
+     * "Enviar notificacao de teste": injeta um evento pelo pipeline real (roteamento
+     * + push), entregue a todos os grants ativos sem exigir regra. Diagnostico de
+     * ponta a ponta — `deliveries` diz quantas pessoas receberam agora.
+     */
+    fun sendTest(originUserId: UUID): IngestResult = ingest(
+        originUserId,
+        IngestInput(
+            packageName = Event.PKG_TEST,
+            eventType = Event.TYPE_SYSTEM,
+            occurredAt = Instant.now(),
+            dedupKey = null,
+            content = """{"title":"Notify Share","body":"Notificacao de teste — se voce compartilha comigo, isto chega pra voce agora."}""",
+        ),
+    )
+
+    /** "Apagar meu histórico" (tela de Privacidade). As entregas caem por cascade. */
+    @Transactional
+    fun deleteMine(originUserId: UUID): Int = events.deleteAllByOrigin(originUserId)
 
     // --- feed do destinatario ---------------------------------------------
 
@@ -146,6 +180,91 @@ class EventService(
     @Transactional(readOnly = true)
     fun unreadCount(meId: UUID): Long = deliveries.countUnread(meId)
 
+    /**
+     * Descobre em qual pagina esta um evento especifico no feed. Usado para
+     * scroll direto ao clicar em uma mensagem que referencia uma notificacao.
+     */
+    @Transactional(readOnly = true)
+    fun locateEvent(
+        recipientId: UUID,
+        eventId: UUID,
+        filter: FeedFilter,
+        pageSize: Int,
+    ): EventLocation {
+        // Verifica se o evento existe e o usuario tem acesso
+        val event = events.findById(eventId)
+            .orElseThrow { NotFoundException("event_not_found", "Notificacao nao encontrada") }
+        
+        val hasAccess = event.originUserId == recipientId ||
+            deliveries.existsByEventIdAndRecipientId(eventId, recipientId)
+        
+        if (!hasAccess) {
+            throw ForbiddenException("event_not_yours", "Voce nao tem acesso a essa notificacao")
+        }
+
+        val originId = filter.fromNickname?.let { resolve(it).id }
+        val size = pageSize.coerceIn(1, 100)
+        
+        // Conta quantos eventos existem ANTES deste no feed (ordenacao desc)
+        val countBefore = deliveries.countBeforeEvent(
+            recipientId = recipientId,
+            targetEventId = eventId,
+            originUserId = originId,
+            packageName = filter.packageName,
+            eventType = filter.eventType,
+            senderHash = filter.senderHash,
+            since = since(filter.period),
+        )
+
+        val page = (countBefore / size).toInt()
+        val indexInPage = (countBefore % size).toInt()
+
+        return EventLocation(
+            eventId = eventId,
+            page = page,
+            indexInPage = indexInPage,
+            totalBefore = countBefore,
+        )
+    }
+
+    /**
+     * Busca eventos ao redor de um evento especifico. Retorna uma "janela" de
+     * contexto centrada no evento alvo. Útil para scroll direto com contexto.
+     */
+    @Transactional(readOnly = true)
+    fun feedAroundEvent(
+        recipientId: UUID,
+        eventId: UUID,
+        filter: FeedFilter,
+        size: Int,
+    ): List<FeedItemView> {
+        // Verifica se o evento existe e o usuario tem acesso
+        val event = events.findById(eventId)
+            .orElseThrow { NotFoundException("event_not_found", "Notificacao nao encontrada") }
+        
+        val hasAccess = event.originUserId == recipientId ||
+            deliveries.existsByEventIdAndRecipientId(eventId, recipientId)
+        
+        if (!hasAccess) {
+            throw ForbiddenException("event_not_yours", "Voce nao tem acesso a essa notificacao")
+        }
+
+        val originId = filter.fromNickname?.let { resolve(it).id }
+        
+        val rows = deliveries.feedAroundEvent(
+            recipientId = recipientId,
+            targetEventId = eventId,
+            originUserId = originId,
+            packageName = filter.packageName,
+            eventType = filter.eventType,
+            senderHash = filter.senderHash,
+            since = since(filter.period),
+            pageable = PageRequest.of(0, size.coerceIn(1, 100)),
+        )
+        
+        return toViews(rows)
+    }
+
     // --- internos -------------------------------------------------------
 
     private fun resolve(nickname: String) =
@@ -162,6 +281,9 @@ class EventService(
         if (rows.isEmpty()) return emptyList()
         val names = users.findAllByIdIn(rows.map { it.originUserId }.toSet())
             .associate { it.id to it.nickname }
+        val mutedPairs = recipientMutes.findAllByGrantIdIn(rows.map { it.grantId }.toSet())
+            .map { it.grantId to it.packageName }
+            .toSet()
         return rows.map { r ->
             FeedItemView(
                 deliveryId = r.deliveryId,
@@ -175,6 +297,7 @@ class EventService(
                 read = r.readAt != null,
                 // o servidor guardou o conteudo, mas esta entrega e "so remetente"
                 content = if (r.deliveredMode == GrantRule.CONTENT) r.content else null,
+                notify = (r.grantId to r.packageName) !in mutedPairs,
             )
         }
     }

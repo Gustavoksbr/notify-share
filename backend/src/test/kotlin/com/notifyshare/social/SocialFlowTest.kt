@@ -75,7 +75,7 @@ class SocialFlowTest {
     private fun register(nick: String): String {
         val body = post(
             "/auth/register",
-            json = """{"nickname":"$nick","email":"$nick@teste.com","password":"senha-forte-123"}""",
+            json = """{"nickname":"$nick","email":"$nick@teste.com","password":"senha-forte-123","acceptedPrivacy":true}""",
         ).body
         return field(body, "accessToken")
     }

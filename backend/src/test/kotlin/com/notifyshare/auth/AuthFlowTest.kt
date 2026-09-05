@@ -53,7 +53,7 @@ class AuthFlowTest {
     }
 
     private fun register(nickname: String, email: String, password: String = SENHA) =
-        post("/auth/register", """{"nickname":"$nickname","email":"$email","password":"$password"}""")
+        post("/auth/register", """{"nickname":"$nickname","email":"$email","password":"$password","acceptedPrivacy":true}""")
 
     private fun refreshToken(body: String) = field(body, "refreshToken")
     private fun accessToken(body: String) = field(body, "accessToken")

@@ -51,6 +51,13 @@ class NotificationRelayService : NotificationListenerService() {
         }.getOrNull()
         val lastMessage = messaging?.messages?.lastOrNull()
 
+        // Conversa em grupo: o MessagingStyle carrega conversationTitle (o nome
+        // do grupo) e a flag isGroupConversation. Alguns apps so setam o titulo,
+        // entao aceitamos tambem quando ele existe e difere do remetente.
+        val groupName = messaging?.conversationTitle?.toString()?.takeIf { gt ->
+            gt.isNotBlank() && (messaging.isGroupConversation || gt != lastMessage?.person?.name?.toString())
+        }
+
         val sender = lastMessage?.person?.name?.toString() ?: title
         val body = lastMessage?.text?.toString() ?: plainText ?: return
         if (body.isBlank()) return
@@ -68,6 +75,7 @@ class NotificationRelayService : NotificationListenerService() {
             title?.let { put("title", JsonPrimitive(it)) }
             put("body", JsonPrimitive(body))
             sender?.let { put("sender", JsonPrimitive(it)) }
+            groupName?.let { put("group", JsonPrimitive(it)) }
         }
 
         IngestWorker.enqueue(

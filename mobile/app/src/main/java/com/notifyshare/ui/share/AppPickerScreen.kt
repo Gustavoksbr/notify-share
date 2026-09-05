@@ -35,6 +35,7 @@ import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.theme.NotifyIcons
 import com.notifyshare.ui.theme.NotifyShareColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private data class AppEntry(val packageName: String, val label: String)
@@ -80,8 +81,17 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
 
     val matchesQuery = { e: AppEntry -> query.isBlank() || e.label.contains(query, ignoreCase = true) }
 
-    Column(Modifier.fillMaxSize()) {
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    androidx.compose.material3.Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
+    ) { pad ->
+    Column(Modifier.fillMaxSize().padding(pad)) {
         ScreenTitle("Apps para @$nickname", onBack = onBack)
+
+        com.notifyshare.ui.common.NotificationAccessWarning()
 
         OutlinedTextField(
             value = query,
@@ -100,8 +110,14 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
         }
 
         // adiciona e mantém a tela aberta: dá pra escolher vários de uma vez.
-        // O app escolhido sai da lista (passa a "já adicionado") como confirmação.
-        val add: (String) -> Unit = { pkg -> vm.addApp(pkg) }
+        // O app escolhido sai da lista (passa a "já adicionado") e um aviso confirma.
+        val add: (AppEntry) -> Unit = { entry ->
+            vm.addApp(entry.packageName)
+            scope.launch {
+                snackbar.currentSnackbarData?.dismiss()
+                snackbar.showSnackbar("${entry.label} adicionado")
+            }
+        }
 
         LazyColumn {
             val recentShown = recentEntries.filter { matchesQuery(it.second) }
@@ -109,7 +125,7 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
                 item { SectionLabel("Notificaram você nos últimos 7 dias") }
                 items(recentShown, key = { "r_${it.second.packageName}" }) { (rec, entry) ->
                     AppRow(entry, subtitle = "${rec.count} notificação${if (rec.count == 1) "" else "s"}") {
-                        add(entry.packageName)
+                        add(entry)
                     }
                 }
             }
@@ -117,13 +133,14 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
             val sysShown = systemEntries.filter { matchesQuery(it) }
             if (sysShown.isNotEmpty()) {
                 item { SectionLabel("Sistema") }
-                items(sysShown, key = { "s_${it.packageName}" }) { AppRow(it) { add(it.packageName) } }
+                items(sysShown, key = { "s_${it.packageName}" }) { e -> AppRow(e) { add(e) } }
             }
 
             val allShown = allEntries.filter { matchesQuery(it) }
             item { SectionLabel("Todos os apps · ${allShown.size}") }
-            items(allShown, key = { "a_${it.packageName}" }) { AppRow(it) { add(it.packageName) } }
+            items(allShown, key = { "a_${it.packageName}" }) { e -> AppRow(e) { add(e) } }
         }
+    }
     }
 }
 

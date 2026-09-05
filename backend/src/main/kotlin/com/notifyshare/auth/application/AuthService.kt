@@ -38,7 +38,20 @@ class AuthService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Transactional
-    fun register(rawNickname: String, rawEmail: String, password: String, deviceLabel: String?): IssuedTokens {
+    fun register(
+        rawNickname: String,
+        rawEmail: String,
+        password: String,
+        deviceLabel: String?,
+        acceptedPrivacy: Boolean = false,
+    ): IssuedTokens {
+        if (!acceptedPrivacy) {
+            throw ValidationException(
+                "privacy_not_accepted",
+                "É preciso aceitar a Política de Privacidade",
+                "acceptedPrivacy",
+            )
+        }
         val nickname = Nickname.normalize(rawNickname)
         Nickname.validate(nickname)?.let { throw ValidationException("invalid_nickname", it, "nickname") }
 
@@ -68,6 +81,7 @@ class AuthService(
                 nickname = nickname,
                 email = email,
                 passwordHash = passwordEncoder.encode(password)!!,
+                privacyAcceptedAt = Instant.now(),
             )
         )
         log.info("Conta criada: @{}", nickname)
@@ -105,7 +119,12 @@ class AuthService(
      * - conta nova com `nickname` -> cadastra sem senha e entra
      */
     @Transactional
-    fun loginWithGoogle(idToken: String, rawNickname: String?, deviceLabel: String?): IssuedTokens {
+    fun loginWithGoogle(
+        idToken: String,
+        rawNickname: String?,
+        deviceLabel: String?,
+        acceptedPrivacy: Boolean = false,
+    ): IssuedTokens {
         val identity = googleVerifier.verify(idToken)
         if (!identity.emailVerified) {
             throw UnauthorizedException("google_email_unverified", "O e-mail dessa conta Google nao esta verificado")
@@ -130,9 +149,19 @@ class AuthService(
         if (users.existsByNickname(nickname)) {
             throw ConflictException("nickname_taken", "Esse nickname ja esta em uso", "nickname")
         }
+        if (!acceptedPrivacy) {
+            throw ValidationException(
+                "privacy_not_accepted",
+                "É preciso aceitar a Política de Privacidade",
+                "acceptedPrivacy",
+            )
+        }
 
         val user = users.save(
-            User(nickname = nickname, email = email, passwordHash = null, googleSub = identity.sub)
+            User(
+                nickname = nickname, email = email, passwordHash = null,
+                googleSub = identity.sub, privacyAcceptedAt = Instant.now(),
+            )
         )
         log.info("Conta criada via Google: @{}", nickname)
         return issueFor(user, UUID.randomUUID(), deviceLabel)

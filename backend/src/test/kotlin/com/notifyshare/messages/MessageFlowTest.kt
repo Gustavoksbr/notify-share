@@ -67,7 +67,7 @@ class MessageFlowTest {
         Regex("\"$name\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1) ?: error("sem $name em $body")
 
     private fun register(nick: String) =
-        field(post("/auth/register", json = """{"nickname":"$nick","email":"$nick@t.com","password":"senha-forte-123"}""").body, "accessToken")
+        field(post("/auth/register", json = """{"nickname":"$nick","email":"$nick@t.com","password":"senha-forte-123","acceptedPrivacy":true}""").body, "accessToken")
 
     @Test
     fun `mensagem exige amizade`() {

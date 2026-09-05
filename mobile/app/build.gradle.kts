@@ -32,6 +32,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        // O build de "release" (que aponta para producao) precisa estar assinado
+        // para instalar. Por ora usa a MESMA chave de debug: assim o SHA-1 nao
+        // muda e o login com Google segue funcionando sem mexer no Firebase.
+        // Trocar por uma chave de release propria antes de publicar numa loja.
+        create("release") {
+            val debugKeystore = File(System.getProperty("user.home"), ".android/debug.keystore")
+            storeFile = debugKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
             // Por padrao o aparelho fala com o PC pelo cabo: adb reverse
@@ -46,10 +60,17 @@ android {
                 .trimEnd('/') + "/ws"
             buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
             buildConfigField("String", "WS_URL", "\"$wsUrl\"")
+            // com.notifyshare.debug — convive com o release (com.notifyshare) no
+            // mesmo aparelho. Nome e icone distintos para nao confundir.
             applicationIdSuffix = ".debug"
+            resValue("string", "app_name", "Notify Share DEV")
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+            // Mantem o applicationId "com.notifyshare" (o que esta no
+            // google-services.json). Instala junto do dev sem colisao.
+            resValue("string", "app_name", "Notify Share")
             buildConfigField("String", "API_BASE_URL", "\"https://notify-share.onrender.com/\"")
             buildConfigField("String", "WS_URL", "\"wss://notify-share.onrender.com/ws\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -64,6 +85,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 }
 

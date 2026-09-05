@@ -52,5 +52,9 @@ class Event(
         const val TYPE_BATTERY = "battery"
         const val TYPE_NETWORK = "network"
         const val TYPE_SYSTEM = "system"
+
+        /** Pseudo-pacote do "enviar notificacao de teste": entrega a todos os
+         *  grants ativos sem exigir regra, so pra provar o pipeline ponta a ponta. */
+        const val PKG_TEST = "system:test"
     }
 }
