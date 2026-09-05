@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -148,6 +149,8 @@ fun PersonNotificationsScreen(
     onBack: () -> Unit,
     highlightEventId: String? = null,
     onReplyToNotification: (eventId: String) -> Unit = {},
+    /** Dentro do hub da pessoa o cabecalho ja existe — aqui vira so uma barra de filtro. */
+    embedded: Boolean = false,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var showFilters by remember { mutableStateOf(false) }
@@ -160,7 +163,14 @@ fun PersonNotificationsScreen(
     // notificação em questao e pisca o fundo.
     androidx.compose.runtime.LaunchedEffect(highlightEventId, state.items) {
         val target = highlightEventId ?: return@LaunchedEffect
-        if (state.items.none { it.eventId == target }) return@LaunchedEffect
+        
+        // Se não encontrou o evento na aba atual, tenta a outra aba
+        if (state.items.none { it.eventId == target }) {
+            val newDirection = if (state.direction == "received") "sent" else "received"
+            vm.load(newDirection, silent = false)
+            return@LaunchedEffect
+        }
+        
         val flat = flatIndexOfEvent(state.items, target)
         if (flat >= 0) {
             listState.animateScrollToItem(flat)
@@ -171,15 +181,30 @@ fun PersonNotificationsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        ScreenTitle("@$nickname", onBack = onBack, trailing = {
-            val n = state.activeFilterCount
-            Text(
-                if (n > 0) "Filtros · $n" else "Filtros",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable { showFilters = true }.padding(12.dp),
-            )
-        })
+        if (embedded) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                val n = state.activeFilterCount
+                Text(
+                    if (n > 0) "Filtros · $n" else "Filtros",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { showFilters = true }.padding(12.dp),
+                )
+            }
+        } else {
+            ScreenTitle("@$nickname", onBack = onBack, trailing = {
+                val n = state.activeFilterCount
+                Text(
+                    if (n > 0) "Filtros · $n" else "Filtros",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { showFilters = true }.padding(12.dp),
+                )
+            })
+        }
 
         TabRow(
             selectedTabIndex = if (state.direction == "received") 0 else 1,
@@ -225,6 +250,7 @@ fun PersonNotificationsScreen(
                                     row,
                                     highlighted = row.deliveryId == highlightId,
                                     onClick = { detailOf = row },
+                                    onReply = { onReplyToNotification(row.eventId) },
                                 )
                             }
                         }
@@ -250,10 +276,7 @@ fun PersonNotificationsScreen(
         NotificationDetailSheet(
             row = row,
             nickname = nickname,
-            // responder so no que a pessoa te envia
-            onReply = if (state.direction == "received") {
-                { onReplyToNotification(row.eventId); detailOf = null }
-            } else null,
+            onReply = { onReplyToNotification(row.eventId); detailOf = null },
             onDismiss = { detailOf = null },
         )
     }
@@ -273,15 +296,14 @@ private fun flatIndexOfEvent(items: List<FeedItemDto>, eventId: String): Int {
 }
 
 @Composable
-private fun Item(row: FeedItemDto, highlighted: Boolean, onClick: () -> Unit) {
+private fun Item(row: FeedItemDto, highlighted: Boolean, onClick: () -> Unit, onReply: (() -> Unit)? = null) {
     val bg by androidx.compose.animation.animateColorAsState(
         if (highlighted) MaterialTheme.colorScheme.tertiaryContainer
         else MaterialTheme.colorScheme.surfaceContainer,
         label = "notifHighlight",
     )
     val group = eventGroup(row)
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
@@ -289,38 +311,63 @@ private fun Item(row: FeedItemDto, highlighted: Boolean, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(13.dp),
     ) {
-        com.notifyshare.ui.common.AppIcon(row.packageName, size = 32.dp, modifier = Modifier.padding(top = 2.dp))
-        Column(Modifier.weight(1f)) {
-            Row {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            com.notifyshare.ui.common.AppIcon(row.packageName, size = 32.dp, modifier = Modifier.padding(top = 2.dp))
+            Column(Modifier.weight(1f)) {
+                Row {
+                    Text(
+                        eventTitle(row),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        shortTime(row.occurredAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NotifyShareColors.muted,
+                    )
+                }
+                if (group != null) {
+                    Text(
+                        "no grupo $group",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NotifyShareColors.muted,
+                    )
+                }
                 Text(
-                    eventTitle(row),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
+                    eventBody(row),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(
-                    shortTime(row.occurredAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NotifyShareColors.muted,
-                )
+                if (!row.notify) {
+                    Text(
+                        "só no feed — sem aviso",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NotifyShareColors.muted,
+                    )
+                }
             }
-            if (group != null) {
-                Text(
-                    "no grupo $group",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NotifyShareColors.muted,
-                )
-            }
-            Text(
-                eventBody(row),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (!row.notify) {
-                Text(
-                    "só no feed — sem aviso",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NotifyShareColors.muted,
-                )
+        }
+        
+        if (onReply != null) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                androidx.compose.material3.TextButton(
+                    onClick = onReply,
+                    modifier = Modifier.padding(0.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        com.notifyshare.ui.theme.NotifyIcons.Send,
+                        contentDescription = "Mencionar",
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Mencionar", style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }
@@ -351,7 +398,7 @@ private fun NotificationDetailSheet(
                 Column {
                     Text(eventTitle(row), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        friendlyPackage(row.packageName),
+                        com.notifyshare.ui.common.appLabel(row.packageName),
                         style = MaterialTheme.typography.labelMedium,
                         color = NotifyShareColors.muted,
                     )
@@ -374,7 +421,7 @@ private fun NotificationDetailSheet(
 
             if (onReply != null) {
                 Spacer(Modifier.height(16.dp))
-                com.notifyshare.ui.common.PillButton("Responder na conversa", onReply)
+                com.notifyshare.ui.common.PillButton("Mencionar na conversa", onReply)
             }
         }
     }

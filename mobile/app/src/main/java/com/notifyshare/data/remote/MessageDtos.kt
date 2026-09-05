@@ -17,6 +17,8 @@ data class LinkedEventRefDto(
     val eventType: String,
     /** ISO-8601 */
     val occurredAt: String,
+    val senderHash: String? = null,
+    val preview: String? = null,
 )
 
 @Serializable

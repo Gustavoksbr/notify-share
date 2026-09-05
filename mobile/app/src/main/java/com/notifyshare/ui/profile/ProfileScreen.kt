@@ -18,6 +18,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -50,6 +53,7 @@ data class ProfileUiState(
     val loading: Boolean = true,
     val refreshFailed: Boolean = false,
     val refreshing: Boolean = false,
+    val deleting: Boolean = false,
 )
 
 class ProfileViewModel(
@@ -108,11 +112,17 @@ class ProfileViewModel(
         }
     }
 
-    fun logout(then: () -> Unit) = viewModelScope.launch {
-        session.clear()
-        cache.clear()
-        auth.logout()
-        then()
+    /** Exclui a conta no servidor e depois limpa a sessao local. */
+    fun deleteAccount(then: () -> Unit) = viewModelScope.launch {
+        _state.value = _state.value.copy(deleting = true)
+        val r = auth.deleteAccount()
+        _state.value = _state.value.copy(deleting = false)
+        if (r is ApiResult.Ok) {
+            session.clear()
+            cache.clear()
+            auth.logout()
+            then()
+        }
     }
 }
 
@@ -121,9 +131,10 @@ fun ProfileScreen(
     vm: ProfileViewModel,
     onOpenPermissions: () -> Unit,
     onOpenAccounts: () -> Unit,
+    onOpenPrivacy: () -> Unit = {},
+    onOpenDangerZone: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val context = androidx.compose.ui.platform.LocalContext.current
 
     if (state.loading) {
         LoadingBox()
@@ -164,24 +175,10 @@ fun ProfileScreen(
 
         ProfileRow("Trocar de conta", "Contas neste aparelho", onOpenAccounts)
         ProfileRow("Permissões", "Acesso a notificações e bateria", onOpenPermissions)
-        ProfileRow("Retenção do histórico", "Apagar depois de 7 dias") {}
-        ProfileRow("Privacidade e dados", "O que sai do seu aparelho") {}
+        ProfileRow("Privacidade e dados", "O que sai do aparelho, exportar dados", onOpenPrivacy)
+        ProfileRow("Zona de perigo", "Excluir conta e apagar histórico", onOpenDangerZone)
 
-        Spacer(Modifier.height(8.dp))
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    vm.logout {
-                        com.notifyshare.ui.restartUiForAccountChange(context)
-                    }
-                }
-                .padding(horizontal = 22.dp, vertical = 16.dp),
-        ) {
-            Text("Sair desta conta", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
-        }
+        Spacer(Modifier.height(24.dp))
         }
         }
     }

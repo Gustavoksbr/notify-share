@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
 private object Routes {
     const val LOGIN = "login"
     const val REGISTER = "register"
+    const val PRIVACY = "privacy"
 }
 
 @Composable
@@ -125,7 +126,11 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
             RegisterScreen(
                 viewModel = authViewModel,
                 onGoToLogin = { navController.popBackStack() },
+                onOpenPrivacy = { navController.navigate(Routes.PRIVACY) },
             )
+        }
+        composable(Routes.PRIVACY) {
+            com.notifyshare.ui.settings.PrivacyScreen(onBack = { navController.popBackStack() })
         }
     }
 }

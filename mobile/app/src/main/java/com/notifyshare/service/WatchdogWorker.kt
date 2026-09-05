@@ -19,7 +19,8 @@ class WatchdogWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     override suspend fun doWork(): Result {
         val container = (applicationContext as NotifyShareApp).container
-        if (!container.shareState.isActiveNow()) {
+        if (!container.serviceSwitch.enabledNow() || !container.shareState.isActiveNow()) {
+            ShareForegroundService.stop(applicationContext)
             cancel(applicationContext)
             return Result.success()
         }

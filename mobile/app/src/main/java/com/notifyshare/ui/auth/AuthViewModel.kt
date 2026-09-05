@@ -16,6 +16,8 @@ data class AuthUiState(
     val nickname: String = "",
     val email: String = "",
     val password: String = "",
+    /** Aceite obrigatório da Política de Privacidade no cadastro. */
+    val acceptedPrivacy: Boolean = false,
     val loading: Boolean = false,
     val errorMessage: String? = null,
     /** Nome do campo que o backend apontou, para destacar o certo no formulario. */
@@ -34,7 +36,11 @@ data class AuthUiState(
         get() = identifier.isNotBlank() && password.isNotBlank() && !loading
 
     val canSubmitRegister: Boolean
-        get() = nickname.isNotBlank() && email.isNotBlank() && password.isNotBlank() && !loading
+        get() = nickname.isNotBlank() && email.isNotBlank() && password.isNotBlank() &&
+            acceptedPrivacy && !loading
+
+    val canCompleteGoogle: Boolean
+        get() = googleNickname.isNotBlank() && acceptedPrivacy && !googleLoading
 
     val needsGoogleNickname: Boolean get() = pendingGoogleToken != null
 }
@@ -48,6 +54,7 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     fun onNicknameChange(value: String) = clearErrorAnd { it.copy(nickname = value.lowercase()) }
     fun onEmailChange(value: String) = clearErrorAnd { it.copy(email = value.lowercase()) }
     fun onPasswordChange(value: String) = clearErrorAnd { it.copy(password = value) }
+    fun onAcceptPrivacyChange(value: Boolean) = clearErrorAnd { it.copy(acceptedPrivacy = value) }
 
     fun login() = submit {
         repository.login(_state.value.identifier.trim(), _state.value.password)
@@ -58,6 +65,7 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
             nickname = _state.value.nickname.trim(),
             email = _state.value.email.trim(),
             password = _state.value.password,
+            acceptedPrivacy = _state.value.acceptedPrivacy,
         )
     }
 
@@ -70,6 +78,8 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         if (_state.value.googleLoading) return
         _state.update { it.copy(googleLoading = true, errorMessage = null, errorField = null) }
         viewModelScope.launch {
+            // conta existente entra na hora; conta nova cai em needs_nickname e o
+            // aceite da privacidade e pedido antes de completar
             when (val result = repository.loginWithGoogle(idToken)) {
                 is ApiResult.Ok -> _state.update { it.copy(googleLoading = false, authComplete = true) }
                 is ApiResult.Failure -> _state.update {
@@ -90,10 +100,10 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     fun completeGoogleSignup() {
         val token = _state.value.pendingGoogleToken ?: return
         val nickname = _state.value.googleNickname.trim()
-        if (nickname.isBlank() || _state.value.googleLoading) return
+        if (nickname.isBlank() || !_state.value.acceptedPrivacy || _state.value.googleLoading) return
         _state.update { it.copy(googleLoading = true, errorMessage = null, errorField = null) }
         viewModelScope.launch {
-            when (val result = repository.loginWithGoogle(token, nickname)) {
+            when (val result = repository.loginWithGoogle(token, nickname, acceptedPrivacy = true)) {
                 is ApiResult.Ok -> _state.update {
                     it.copy(googleLoading = false, pendingGoogleToken = null, googleEmail = null, authComplete = true)
                 }

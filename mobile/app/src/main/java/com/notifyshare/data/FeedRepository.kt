@@ -67,10 +67,47 @@ class FeedRepository(
     suspend fun ingest(body: IngestEventBody): ApiResult<IngestResultDto> =
         apiCall(json) { api.ingest(body) }
 
+    suspend fun sendTestNotification(): ApiResult<IngestResultDto> =
+        apiCall(json) { api.sendTestNotification() }
+
+    suspend fun deleteMyHistory(): ApiResult<Unit> = apiCall(json) { api.deleteMyHistory() }
+
     suspend fun markRead(deliveryId: String): ApiResult<Unit> =
         apiCall(json) { api.markEventRead(deliveryId) }
 
     suspend fun unreadCount(): ApiResult<CountDto> = apiCall(json) { api.eventUnreadCount() }
+
+    suspend fun eventLocation(
+        eventId: String,
+        query: FeedQuery = FeedQuery(),
+        pageSize: Int = 50,
+    ): ApiResult<com.notifyshare.data.remote.EventLocationDto> = apiCall(json) {
+        api.eventLocation(
+            eventId,
+            query.from,
+            query.packageName,
+            query.type,
+            query.sender,
+            query.period,
+            pageSize,
+        )
+    }
+
+    suspend fun eventContext(
+        eventId: String,
+        query: FeedQuery = FeedQuery(),
+        size: Int = 50,
+    ): ApiResult<List<FeedItemDto>> = apiCall(json) {
+        api.eventContext(
+            eventId,
+            query.from,
+            query.packageName,
+            query.type,
+            query.sender,
+            query.period,
+            size,
+        )
+    }
 
     private companion object {
         const val KEY_FEED = "feed"

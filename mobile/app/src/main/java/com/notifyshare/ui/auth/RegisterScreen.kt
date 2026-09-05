@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun RegisterScreen(
     viewModel: AuthViewModel,
     onGoToLogin: () -> Unit,
+    onOpenPrivacy: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -90,6 +91,12 @@ fun RegisterScreen(
 
             EmailNotice()
 
+            PrivacyConsentRow(
+                checked = state.acceptedPrivacy,
+                onCheckedChange = viewModel::onAcceptPrivacyChange,
+                onOpenPolicy = onOpenPrivacy,
+            )
+
             PrimaryButton(
                 text = "Criar conta",
                 onClick = viewModel::register,
@@ -121,6 +128,33 @@ fun RegisterScreen(
         GoogleNicknameDialog(viewModel)
 
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+@Composable
+private fun PrivacyConsentRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onOpenPolicy: () -> Unit,
+) {
+    Row(
+        verticalAlignment = androidx.compose.ui.Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Column {
+            Text(
+                "Li e aceito a Política de Privacidade. Minhas notificações são processadas " +
+                    "no meu aparelho; só é compartilhado o que minhas regras definem, com quem " +
+                    "eu escolher. O histórico compartilhado é apagado após 7 dias.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = onOpenPolicy, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                Text("Ver Política de Privacidade", style = MaterialTheme.typography.labelMedium)
+            }
+        }
     }
 }
 

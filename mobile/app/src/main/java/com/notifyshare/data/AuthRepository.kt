@@ -24,20 +24,38 @@ class AuthRepository(
     private val deviceLabel: String =
         "${Build.MANUFACTURER.replaceFirstChar(Char::uppercase)} ${Build.MODEL}".take(80)
 
-    suspend fun register(nickname: String, email: String, password: String): ApiResult<UserDto> =
-        apiCall(json) { api.register(RegisterRequest(nickname, email, password, deviceLabel)) }
-            .alsoStoreTokens()
+    suspend fun register(
+        nickname: String,
+        email: String,
+        password: String,
+        acceptedPrivacy: Boolean,
+    ): ApiResult<UserDto> =
+        apiCall(json) {
+            api.register(RegisterRequest(nickname, email, password, acceptedPrivacy, deviceLabel))
+        }.alsoStoreTokens()
 
     suspend fun login(identifier: String, password: String): ApiResult<UserDto> =
         apiCall(json) { api.login(LoginRequest(identifier, password, deviceLabel)) }
             .alsoStoreTokens()
 
     /** nickname so no primeiro login desta conta Google (senao 409 needs_nickname). */
-    suspend fun loginWithGoogle(idToken: String, nickname: String? = null): ApiResult<UserDto> =
-        apiCall(json) { api.googleLogin(GoogleLoginRequest(idToken, nickname, deviceLabel)) }
-            .alsoStoreTokens()
+    suspend fun loginWithGoogle(
+        idToken: String,
+        nickname: String? = null,
+        acceptedPrivacy: Boolean = false,
+    ): ApiResult<UserDto> =
+        apiCall(json) {
+            api.googleLogin(GoogleLoginRequest(idToken, nickname, acceptedPrivacy, deviceLabel))
+        }.alsoStoreTokens()
 
     suspend fun me(): ApiResult<UserDto> = apiCall(json) { api.me() }
+
+    /** LGPD: apaga a conta no servidor. O logout local fica com quem chamou. */
+    suspend fun deleteAccount(): ApiResult<Unit> = apiCall(json) { api.deleteAccount() }
+
+    /** LGPD: baixa todos os dados como texto JSON. */
+    suspend fun exportData(): String? =
+        runCatching { api.exportData() }.getOrNull()?.takeIf { it.isSuccessful }?.body()?.string()
 
     /** Ping de saude: so serve para atualizar Connectivity (OK / SERVER_DOWN)
      *  como efeito colateral do apiCall. O resultado em si e ignorado. */

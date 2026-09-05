@@ -91,6 +91,10 @@ data class RuleDto(
     val allSenders: Boolean = true,
     val batteryThreshold: Int? = null,
     val senders: List<SenderDto> = emptyList(),
+    /** só entrega quando o título/corpo contém algum destes termos (YouTube etc.) */
+    val textFilters: List<String> = emptyList(),
+    /** desliga a proteção contra códigos de verificação para este app */
+    val allowCodes: Boolean = false,
 )
 
 @Serializable

@@ -39,3 +39,14 @@ data class FeedItemDto(
 
 @Serializable
 data class CountDto(val count: Long)
+
+@Serializable
+data class EventLocationDto(
+    val eventId: String,
+    /** Página onde o evento está (base 0). */
+    val page: Int,
+    /** Posição dentro da página (base 0). */
+    val indexInPage: Int,
+    /** Total de eventos antes deste (considerando filtros). */
+    val totalBefore: Long,
+)

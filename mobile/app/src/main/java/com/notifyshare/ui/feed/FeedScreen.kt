@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -161,7 +162,7 @@ class FeedViewModel(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun FeedScreen(vm: FeedViewModel, onOpenPerson: (String) -> Unit) {
+fun FeedScreen(vm: FeedViewModel, onOpenPerson: (String) -> Unit, onReplyToNotification: ((eventId: String, from: String) -> Unit)? = null) {
     val state by vm.state.collectAsStateWithLifecycle()
     var showFilters by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
@@ -200,7 +201,7 @@ fun FeedScreen(vm: FeedViewModel, onOpenPerson: (String) -> Unit) {
                 } else {
                     FeedList(
                         state.items, state.loadingMore, vm::loadMore,
-                        onOpenPerson, vm::markRead,
+                        onOpenPerson, vm::markRead, onReplyToNotification,
                     )
                 }
             }
@@ -226,6 +227,7 @@ private fun FeedList(
     onLoadMore: () -> Unit,
     onOpenPerson: (String) -> Unit,
     onMarkRead: (String) -> Unit,
+    onReplyToNotification: ((eventId: String, from: String) -> Unit)? = null,
 ) {
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     com.notifyshare.ui.common.InfiniteListHandler(listState, onLoadMore = onLoadMore)
@@ -242,7 +244,7 @@ private fun FeedList(
                 FeedCard(row, onClick = {
                     if (!row.read) onMarkRead(row.deliveryId)
                     onOpenPerson(row.from)
-                })
+                }, onReply = onReplyToNotification)
             }
         }
         if (loadingMore) item(key = "load_more") { com.notifyshare.ui.common.LoadMoreFooter() }
@@ -250,9 +252,8 @@ private fun FeedList(
 }
 
 @Composable
-private fun FeedCard(row: FeedItemDto, onClick: () -> Unit) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+private fun FeedCard(row: FeedItemDto, onClick: () -> Unit, onReply: ((String, String) -> Unit)? = null) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
@@ -264,47 +265,72 @@ private fun FeedCard(row: FeedItemDto, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(14.dp),
     ) {
-        com.notifyshare.ui.common.AppIcon(row.packageName, size = 34.dp, modifier = Modifier.padding(top = 2.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            com.notifyshare.ui.common.AppIcon(row.packageName, size = 34.dp, modifier = Modifier.padding(top = 2.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        eventTitle(row),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        shortTime(row.occurredAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NotifyShareColors.muted,
+                    )
+                }
+                com.notifyshare.ui.format.eventGroup(row)?.let { g ->
+                    Text(
+                        "no grupo $g",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NotifyShareColors.muted,
+                    )
+                }
                 Text(
-                    eventTitle(row),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f),
+                    eventBody(row),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    shortTime(row.occurredAt),
+                    "via @${row.from}" + if (!row.notify) " · só no feed" else "",
                     style = MaterialTheme.typography.labelSmall,
                     color = NotifyShareColors.muted,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            com.notifyshare.ui.format.eventGroup(row)?.let { g ->
-                Text(
-                    "no grupo $g",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NotifyShareColors.muted,
+            if (!row.read) {
+                Box(
+                    Modifier
+                        .padding(top = 4.dp)
+                        .size(8.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape),
                 )
             }
-            Text(
-                eventBody(row),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "via @${row.from}" + if (!row.notify) " · só no feed" else "",
-                style = MaterialTheme.typography.labelSmall,
-                color = NotifyShareColors.muted,
-                modifier = Modifier.padding(top = 4.dp),
-            )
         }
-        if (!row.read) {
-            Box(
-                Modifier
-                    .padding(top = 4.dp)
-                    .size(8.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape),
-            )
+        
+        if (onReply != null) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                androidx.compose.material3.TextButton(
+                    onClick = { onReply(row.eventId, row.from) },
+                    modifier = Modifier.padding(0.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        com.notifyshare.ui.theme.NotifyIcons.Send,
+                        contentDescription = "Responder",
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Responder", style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -25,23 +26,36 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlinx.coroutines.launch
 import com.notifyshare.core.OemSettings
 import com.notifyshare.ui.common.ScreenTitle
 import com.notifyshare.ui.theme.NotifyShareColors
 
 @Composable
-fun PermissionsScreen(fcmStatus: String?, onBack: () -> Unit) {
+fun PermissionsScreen(
+    fcmStatus: String?,
+    onBack: () -> Unit,
+    onSendTest: (suspend () -> Int?)? = null,
+    serviceEnabled: Boolean = true,
+    onSetService: (Boolean) -> Unit = {},
+) {
     val context = LocalContext.current
     var notificationAccess by remember { mutableStateOf(hasNotificationAccess(context)) }
+    var canPostNotifications by remember { mutableStateOf(canPostNotifications(context)) }
     var batteryExempt by remember { mutableStateOf(isBatteryExempt(context)) }
     val autostart = remember { OemSettings.autostartIntent(context) }
 
     // Reavalia ao voltar das Configuracoes do sistema.
     LifecycleResumeEffect(Unit) {
         notificationAccess = hasNotificationAccess(context)
+        canPostNotifications = canPostNotifications(context)
         batteryExempt = isBatteryExempt(context)
         onPauseOrDispose { }
     }
@@ -53,17 +67,51 @@ fun PermissionsScreen(fcmStatus: String?, onBack: () -> Unit) {
     ) {
         ScreenTitle("Permissões", onBack = onBack)
 
+        // Explicacao da legenda de cores (verde/ambar) — linguagem de dev, tirada
+        // da tela pro usuario final. O codigo fica pronto se quisermos voltar.
+        /*
         Text(
-            "O Android exige que você conceda cada uma manualmente. Toque em qualquer " +
-                "uma para abrir as Configurações e ligar ou desligar.",
+            buildAnnotatedString {
+                append("Tudo ")
+                withStyle(SpanStyle(color = NotifyShareColors.online)) { append("verde") }
+                append(" = está tudo ligado. Tudo ")
+                withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("âmbar") }
+                append(" = o app não tem nenhuma permissão.")
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
+        */
+
+        // Interruptor mestre: liga/desliga o servico direto, nao abre config.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Compartilhamento em segundo plano", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "O serviço que envia suas notificações. É este que a notificação fixa desliga.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = serviceEnabled,
+                    onCheckedChange = onSetService,
+                )
+            }
+        }
 
         PermissionCard(
             title = "Acesso às notificações",
-            body = "Suas notificações são lidas no próprio aparelho para aplicar as regras que você criar. " +
+            body = "Permite o app ler suas notificações e reenviar a quem você escolheu para compartilhar.\nSuas notificações são lidas no próprio aparelho para aplicar as regras que você criar. " +
                 "Nada sai daqui sem uma regra sua.",
             granted = notificationAccess,
             required = true,
@@ -74,6 +122,24 @@ fun PermissionsScreen(fcmStatus: String?, onBack: () -> Unit) {
                 )
             },
         )
+
+        // Android 13+: permissao de POSTAR notificacoes (diferente de LER as dos
+        // outros apps). Sem ela o sistema bloqueia os avisos do Notify Share.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            PermissionCard(
+                title = "Permitir notificações",
+                body = "Permite que o app te envie notificações.\n Sem isso, o app não poderá enviar notificação nenhuma, nem do próprio app nem de outras pessoas",
+                granted = canPostNotifications,
+                required = true,
+                onClick = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                },
+            )
+        }
 
         // Android 13+ bloqueia essa permissao para apps instalados fora da Play
         // Store ("configuracao restrita"). So aparece se for o caso e ainda nao concedido.
@@ -116,14 +182,30 @@ fun PermissionsScreen(fcmStatus: String?, onBack: () -> Unit) {
             PermissionCard(
                 title = "Início automático (opcional)",
                 body = "Deixa o app se reabrir sozinho e receber avisos em segundo plano de forma mais confiável. " +
-                    "Sem isso o app funciona normalmente — só enquanto estiver aberto.",
-                granted = null, // o sistema nao diz se esta ligado; e so um atalho
+                    "O Android não deixa a gente confirmar se está ligado — por isso o botão não muda, " +
+                    "mesmo depois de você ativar lá nas configurações.",
+                granted = null, // o sistema nao expoe esse estado pra nenhum app de terceiros; nao e bug nosso
                 required = false,
                 onClick = { runCatching { context.startActivity(autostart) } },
             )
         }
 
-        DeliveryStatus(fcmStatus)
+        // Redundante com o interruptor "Compartilhamento em segundo plano" que ja
+        // fica no topo da tela — mais um status pra explicar sem precisar.
+        // DeliveryStatus(fcmStatus)
+
+        // Diagnostico pensado pra debugar, nao pra tela do usuario final. Fica
+        // comentado em vez de apagado — reativa trocando isto de volta.
+        /*
+        if (onSendTest != null) {
+            TestNotificationCard(
+                notificationAccess = notificationAccess,
+                canPost = canPostNotifications,
+                fcmOk = fcmStatus == "ok",
+                onSendTest = onSendTest,
+            )
+        }
+        */
 
         Text(
             "Enquanto houver compartilhamento ativo, uma notificação fixa fica visível no seu aparelho. " +
@@ -158,24 +240,119 @@ private fun PermissionCard(
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        val (label, color) = when {
-            granted == true -> "Concedida · toque para gerenciar" to NotifyShareColors.online
-            granted == false && required -> "Conceder" to MaterialTheme.colorScheme.primary
-            else -> "Abrir configuração" to MaterialTheme.colorScheme.primary
+        // granted == null: nao sabemos o estado real (ex.: inicio automatico —
+        // nenhum app de terceiros consegue ler isso). Nao mostra como pendente
+        // (ambar), pra nao parecer que falta algo quando pode nao faltar.
+        val label = when {
+            granted == true -> "Concedida · toque para gerenciar"
+            granted == false && required -> "Conceder"
+            else -> "Gerenciar"
+        }
+        val textColor = when (granted) {
+            true -> NotifyShareColors.online
+            false -> MaterialTheme.colorScheme.onPrimary
+            null -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        val background = when (granted) {
+            true -> MaterialTheme.colorScheme.surface
+            false -> MaterialTheme.colorScheme.primary
+            null -> MaterialTheme.colorScheme.surfaceContainerHighest
         }
         Text(
             label,
             style = MaterialTheme.typography.labelLarge,
-            color = if (granted == true) NotifyShareColors.online else MaterialTheme.colorScheme.onPrimary,
+            color = textColor,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    if (granted == true) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
-                    RoundedCornerShape(24.dp),
-                )
+                .background(background, RoundedCornerShape(24.dp))
                 .padding(vertical = 12.dp),
         )
+    }
+}
+
+/**
+ * Diagnostico de ponta a ponta: mostra o estado das 3 permissoes que a entrega
+ * depende e dispara um evento de teste pelo pipeline real.
+ */
+@Composable
+private fun TestNotificationCard(
+    notificationAccess: Boolean,
+    canPost: Boolean,
+    fcmOk: Boolean,
+    onSendTest: suspend () -> Int?,
+) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var sending by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Testar o compartilhamento", style = MaterialTheme.typography.titleMedium)
+        CheckLine("Acesso às notificações", notificationAccess)
+        CheckLine("Permitir notificações", canPost)
+        CheckLine("Entrega em segundo plano", fcmOk)
+
+        androidx.compose.foundation.layout.Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(22.dp))
+                .clickable(enabled = !sending) {
+                    sending = true
+                    result = null
+                    scope.launch {
+                        val n = onSendTest()
+                        result = when {
+                            n == null -> "Não deu para enviar agora. Tente de novo."
+                            n == 0 -> "Enviado ✓ — mas ninguém tem um compartilhamento ativo com você ainda."
+                            n == 1 -> "Enviado ✓ — 1 pessoa recebeu agora."
+                            else -> "Enviado ✓ — $n pessoas receberam agora."
+                        }
+                        sending = false
+                    }
+                }
+                .padding(vertical = 12.dp),
+        ) {
+            if (sending) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            } else {
+                Text(
+                    "Enviar notificação de teste",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+        }
+        result?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!notificationAccess) {
+            Text(
+                "⚠️ Sem o \"Acesso às notificações\", nenhuma notificação de app é compartilhada — " +
+                    "só bateria e Wi-Fi.",
+                style = MaterialTheme.typography.labelMedium,
+                color = NotifyShareColors.warning,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CheckLine(label: String, ok: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(if (ok) "✓" else "✗", color = if (ok) NotifyShareColors.online else MaterialTheme.colorScheme.error)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -203,6 +380,9 @@ private fun hasNotificationAccess(context: Context): Boolean {
     val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: return false
     return flat.split(":").any { it.contains(context.packageName) }
 }
+
+private fun canPostNotifications(context: Context): Boolean =
+    NotificationManagerCompat.from(context).areNotificationsEnabled()
 
 private fun isBatteryExempt(context: Context): Boolean {
     val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager ?: return false

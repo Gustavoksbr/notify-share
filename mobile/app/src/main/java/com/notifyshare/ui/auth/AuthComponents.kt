@@ -198,12 +198,24 @@ fun GoogleNicknameDialog(viewModel: AuthViewModel) {
                     fieldName = "nickname",
                     errorMessage = state.errorMessage,
                 )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(
+                        checked = state.acceptedPrivacy,
+                        onCheckedChange = viewModel::onAcceptPrivacyChange,
+                    )
+                    Text(
+                        "Aceito a Política de Privacidade",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = viewModel::completeGoogleSignup,
-                enabled = state.googleNickname.isNotBlank() && !state.googleLoading,
+                enabled = state.canCompleteGoogle,
             ) { Text("Criar conta") }
         },
         dismissButton = {

@@ -93,11 +93,17 @@ class UserProfileViewModel(
         }
     }
 
+    private fun signalSocial() {
+        com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.FRIENDS)
+        com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
+    }
+
     fun block() = viewModelScope.launch {
         _state.value = _state.value.copy(working = true)
         repo.block(nickname)
         _state.value = _state.value.copy(working = false)
         load()
+        signalSocial()
     }
 
     fun unblock() = viewModelScope.launch {
@@ -105,6 +111,7 @@ class UserProfileViewModel(
         repo.unblock(nickname)
         _state.value = _state.value.copy(working = false)
         load()
+        signalSocial()
     }
 
     /** Peço para @nickname compartilhar as notificações dele comigo. */
@@ -121,6 +128,7 @@ class UserProfileViewModel(
             },
         )
         load()
+        signalSocial()
     }
 
     /** Ofereço compartilhar as minhas notificações com @nickname. */
@@ -137,6 +145,7 @@ class UserProfileViewModel(
             },
         )
         load()
+        signalSocial()
     }
 
     /** Cancela um pedido/oferta pendente que eu iniciei. */
@@ -148,6 +157,7 @@ class UserProfileViewModel(
             notice = if (r is ApiResult.Failure) r.message else "Pedido cancelado.",
         )
         load()
+        signalSocial()
     }
 
     fun dismissNotice() { _state.value = _state.value.copy(notice = null) }

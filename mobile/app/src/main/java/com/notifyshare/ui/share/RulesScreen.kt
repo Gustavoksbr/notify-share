@@ -20,6 +20,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -95,6 +98,15 @@ class RulesViewModel(
     fun toggleEnabled(pkg: String) = mutate(pkg) { it.copy(enabled = !it.enabled) }
     fun setMode(pkg: String, mode: String) = mutate(pkg) { it.copy(contentMode = mode) }
     fun toggleAllSenders(pkg: String) = mutate(pkg) { it.copy(allSenders = !it.allSenders) }
+    fun toggleAllowCodes(pkg: String) = mutate(pkg) { it.copy(allowCodes = !it.allowCodes) }
+    fun addTextFilter(pkg: String, term: String) = mutate(pkg) {
+        val t = term.trim()
+        if (t.isEmpty() || it.textFilters.any { f -> f.equals(t, ignoreCase = true) }) it
+        else it.copy(textFilters = it.textFilters + t)
+    }
+    fun removeTextFilter(pkg: String, term: String) = mutate(pkg) {
+        it.copy(textFilters = it.textFilters.filterNot { f -> f == term })
+    }
     fun removeApp(pkg: String) {
         _state.value = _state.value.copy(
             rules = _state.value.rules.filterNot { it.packageName == pkg },
@@ -122,9 +134,14 @@ class RulesViewModel(
         _state.value = _state.value.copy(saving = true)
         viewModelScope.launch {
             when (val r = repo.setRules(grantId, _state.value.rules)) {
-                is ApiResult.Ok -> _state.value = RulesUiState(
-                    loading = false, rules = r.value, dirty = false, savedAt = System.currentTimeMillis(),
-                )
+                is ApiResult.Ok -> {
+                    _state.value = RulesUiState(
+                        loading = false, rules = r.value, dirty = false,
+                        savedAt = System.currentTimeMillis(),
+                    )
+                    // a aba Compartilhar e o hub releem a contagem de apps na hora
+                    com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
+                }
                 is ApiResult.Failure -> _state.value = _state.value.copy(saving = false, error = r.message)
             }
         }
@@ -139,6 +156,7 @@ fun RulesScreen(
     onPickApps: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    var contactPickerFor by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         val activeCount = state.rules.count { it.enabled }
@@ -156,65 +174,106 @@ fun RulesScreen(
 
         NotificationAccessWarning()
 
-        when {
-            state.loading -> LoadingBox()
-            state.rules.isEmpty() -> EmptyState("Nenhum app liberado ainda.\nToque no + para escolher.")
-            else -> com.notifyshare.ui.common.PullRefresh(
-                state.refreshing, vm::refresh, Modifier.weight(1f),
-            ) {
-              LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(state.rules, key = { it.packageName }) { rule ->
-                    RuleCard(
-                        rule = rule,
-                        onToggle = { vm.toggleEnabled(rule.packageName) },
-                        onMode = { vm.setMode(rule.packageName, it) },
-                        onAllSenders = { vm.toggleAllSenders(rule.packageName) },
-                        onRemove = { vm.removeApp(rule.packageName) },
-                    )
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+            when {
+                state.loading -> LoadingBox()
+                state.rules.isEmpty() -> EmptyState("Nenhum app liberado ainda.\nToque no + para escolher.")
+                else -> com.notifyshare.ui.common.PullRefresh(state.refreshing, vm::refresh) {
+                  LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(state.rules, key = { it.packageName }) { rule ->
+                        RuleCard(
+                            rule = rule,
+                            onToggle = { vm.toggleEnabled(rule.packageName) },
+                            onMode = { vm.setMode(rule.packageName, it) },
+                            onAllSenders = { vm.toggleAllSenders(rule.packageName) },
+                            onRemove = { vm.removeApp(rule.packageName) },
+                            onToggleSender = { h, l -> vm.toggleSender(rule.packageName, h, l) },
+                            onAddSender = { name ->
+                                vm.toggleSender(
+                                    rule.packageName,
+                                    com.notifyshare.notify.hashSender(name),
+                                    name,
+                                )
+                            },
+                            onOpenContactPicker = { contactPickerFor = rule.packageName },
+                        )
+                    }
+                  }
                 }
-              }
             }
         }
 
-        if (state.dirty) {
-            androidx.compose.foundation.layout.Box(
-                contentAlignment = androidx.compose.ui.Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(26.dp))
-                    .clickable(enabled = !state.saving) { vm.save() }
-                    .padding(vertical = 16.dp),
-            ) {
-                Text(
-                    "Salvar regras",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.alpha(if (state.saving) 0f else 1f),
+        SaveRulesButton(dirty = state.dirty, saving = state.saving, onSave = vm::save)
+    }
+
+    contactPickerFor?.let { pkg ->
+        ContactPickerSheet(
+            onDismiss = { contactPickerFor = null },
+            onPick = { name ->
+                vm.toggleSender(pkg, com.notifyshare.notify.hashSender(name), name)
+                contactPickerFor = null
+            },
+        )
+    }
+}
+
+/** Sempre visivel; cinza + "nada para salvar" quando nao ha mudanca pendente. */
+@Composable
+internal fun SaveRulesButton(dirty: Boolean, saving: Boolean, onSave: () -> Unit) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        androidx.compose.foundation.layout.Box(
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (dirty) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    RoundedCornerShape(26.dp),
                 )
-                if (state.saving) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
+                .clickable(enabled = dirty && !saving, onClick = onSave)
+                .padding(vertical = 16.dp),
+        ) {
+            Text(
+                "Salvar regras",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (dirty) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.alpha(if (saving) 0f else 1f),
+            )
+            if (saving) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
             }
+        }
+        if (!dirty && !saving) {
+            Text(
+                "nada para salvar",
+                style = MaterialTheme.typography.labelSmall,
+                color = NotifyShareColors.muted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun RuleCard(
+internal fun RuleCard(
     rule: RuleDto,
     onToggle: () -> Unit,
     onMode: (String) -> Unit,
     onAllSenders: () -> Unit,
     onRemove: () -> Unit,
+    onToggleSender: (hash: String, label: String?) -> Unit = { _, _ -> },
+    onAddSender: (name: String) -> Unit = {},
+    onOpenContactPicker: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -230,22 +289,40 @@ private fun RuleCard(
         ) {
             com.notifyshare.ui.common.AppIcon(rule.packageName, size = 32.dp)
             Text(
-                friendlyPackage(rule.packageName),
+                com.notifyshare.ui.common.appLabel(rule.packageName),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
             Switch(checked = rule.enabled, onCheckedChange = { onToggle() })
         }
 
+        if (!rule.enabled) {
+            Text(
+                "Desligado — não é compartilhado. A configuração fica salva.",
+                style = MaterialTheme.typography.labelSmall,
+                color = NotifyShareColors.muted,
+            )
+        }
+
         if (rule.enabled) {
             SegmentedRow(
-                options = listOf("content" to "Conteúdo", "sender_only" to "Só remetente", "paused" to "Pausado"),
-                selected = rule.contentMode,
+                options = listOf("content" to "Conteúdo", "sender_only" to "Só aviso"),
+                selected = if (rule.contentMode == "paused") "content" else rule.contentMode,
                 onSelect = onMode,
             )
+            Text(
+                if (rule.contentMode == "sender_only")
+                    "Manda só que chegou algo, sem o texto."
+                else
+                    "Manda o texto da notificação.",
+                style = MaterialTheme.typography.labelSmall,
+                color = NotifyShareColors.muted,
+            )
 
-            val isMessagingApp = !rule.packageName.startsWith("system:")
-            if (isMessagingApp && rule.contentMode != "paused") {
+            // Escolher remetente so existe pros apps que a gente sabe que tem essa
+            // nocao (ver AppCapabilities) — nao e todo app que "tem contato".
+            val capability = com.notifyshare.notify.AppCapabilities.of(rule.packageName)
+            if (capability.supportsSenders && rule.contentMode != "paused") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Todos os remetentes",
@@ -256,18 +333,30 @@ private fun RuleCard(
                 }
                 if (!rule.allSenders) {
                     SectionLabel("Remetentes liberados")
-                    if (rule.senders.isEmpty()) {
-                        Text(
-                            "A lista cresce conforme você recebe mensagens desse app.",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = NotifyShareColors.muted,
-                        )
-                    } else {
+                    Text(
+                        "Só os marcados são avisados. Toque num para remover.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NotifyShareColors.muted,
+                    )
+                    if (rule.senders.isNotEmpty()) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             rule.senders.forEach { s ->
-                                Chip(s.senderLabel ?: s.senderHash.take(6), selected = true) {}
+                                Chip(s.senderLabel ?: s.senderHash.take(6), selected = true) {
+                                    onToggleSender(s.senderHash, s.senderLabel)
+                                }
                             }
                         }
+                    }
+                    when (capability.senderPicker) {
+                        com.notifyshare.notify.SenderPickerType.CONTACTS -> Text(
+                            "Escolher contato",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable(onClick = onOpenContactPicker).padding(vertical = 6.dp),
+                        )
+                        com.notifyshare.notify.SenderPickerType.FREE_TEXT ->
+                            AddTermField("Adicionar remetente", onAddSender)
+                        com.notifyshare.notify.SenderPickerType.NONE -> Unit
                     }
                 }
             }
@@ -278,6 +367,33 @@ private fun RuleCard(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.clickable(onClick = onRemove),
+        )
+    }
+}
+
+@Composable
+private fun AddTermField(placeholder: String, onAdd: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        androidx.compose.material3.OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = { Text(placeholder, style = MaterialTheme.typography.bodySmall) },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "Adicionar",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (text.isBlank()) NotifyShareColors.muted else MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .clickable(enabled = text.isNotBlank()) { onAdd(text.trim()); text = "" }
+                .padding(8.dp),
         )
     }
 }

@@ -7,6 +7,7 @@ data class RegisterRequest(
     val nickname: String,
     val email: String,
     val password: String,
+    val acceptedPrivacy: Boolean = false,
     val deviceLabel: String? = null,
 )
 
@@ -27,6 +28,7 @@ data class RefreshRequest(
 data class GoogleLoginRequest(
     val idToken: String,
     val nickname: String? = null,
+    val acceptedPrivacy: Boolean = false,
     val deviceLabel: String? = null,
 )
 
@@ -41,6 +43,7 @@ data class UserDto(
     val createdAt: String,
     val google: Boolean = false,
     val hasPassword: Boolean = true,
+    val privacyAccepted: Boolean = true,
 )
 
 @Serializable

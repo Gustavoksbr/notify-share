@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +65,8 @@ data class FriendsUiState(
     val error: String? = null,
     val failedToLoad: Boolean = false,
     val refreshing: Boolean = false,
+    /** Nicknames com quem ja existe um compartilhamento (qualquer sentido). */
+    val shareGrants: Set<String> = emptySet(),
     /** Acoes em curso: "add:<nick>", "accept:<id>", "decline:<id>". */
     val busy: Set<String> = emptySet(),
 )
@@ -95,12 +98,20 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
             val friends = repo.friends()
             val requests = repo.friendRequests()
             val friendsOk = friends as? ApiResult.Ok
+            val sharer = repo.grants("sharer")
+            val recipient = repo.grants("recipient")
+            val anyGrantOk = sharer is ApiResult.Ok || recipient is ApiResult.Ok
+            val grantNicks = buildSet {
+                (sharer as? ApiResult.Ok)?.value?.forEach { add(it.counterpart) }
+                (recipient as? ApiResult.Ok)?.value?.forEach { add(it.counterpart) }
+            }
             _state.value = _state.value.copy(
                 loading = false,
                 refreshing = false,
                 friends = friendsOk?.value ?: _state.value.friends,
                 incoming = (requests as? ApiResult.Ok)?.value?.incoming ?: _state.value.incoming,
                 outgoing = (requests as? ApiResult.Ok)?.value?.outgoing ?: _state.value.outgoing,
+                shareGrants = if (anyGrantOk) grantNicks else _state.value.shareGrants,
                 error = (friends as? ApiResult.Failure)?.message,
                 // "falhou ao carregar" e diferente de "nao tem amigos": so mostra
                 // o estado vazio quando o servidor respondeu de fato.
@@ -136,14 +147,26 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
         repo.addFriend(nickname, alsoOfferShare, alsoRequestShare)
         onQuery(_state.value.query)
         load(silent = true)
+        signalSocial()
     }
 
-    fun accept(id: String) = launchBusy("accept:$id") { repo.acceptFriend(id); load(silent = true) }
-    fun decline(id: String) = launchBusy("decline:$id") { repo.declineFriend(id); load(silent = true) }
+    fun accept(id: String) = launchBusy("accept:$id") {
+        repo.acceptFriend(id); load(silent = true); signalSocial()
+    }
+    fun decline(id: String) = launchBusy("decline:$id") {
+        repo.declineFriend(id); load(silent = true); signalSocial()
+    }
     fun cancel(id: String) = launchBusy("cancel:$id") {
         repo.cancelFriendRequest(id)
         onQuery(_state.value.query)
         load(silent = true)
+        signalSocial()
+    }
+
+    /** Amizade e compartilhamento andam juntos (pedido com share) — avisa os dois. */
+    private fun signalSocial() {
+        com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.FRIENDS)
+        com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
     }
 
     private fun launchBusy(key: String, block: suspend () -> Unit) = viewModelScope.launch {
@@ -161,7 +184,8 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
 fun FriendsScreen(
     vm: FriendsViewModel,
     onOpenRequests: () -> Unit,
-    onOpenChat: (String) -> Unit,
+    /** Abre o hub da pessoa numa aba: "conversa" | "notificacoes" | "apps". */
+    onOpenHub: (nickname: String, tab: String) -> Unit,
     onOpenProfile: (String) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -300,7 +324,8 @@ fun FriendsScreen(
                 items(state.friends, key = { "friend_${it.nickname}" }) { f ->
                     FriendRow(
                         f,
-                        onClick = { onOpenChat(f.nickname) },
+                        hasShare = f.nickname in state.shareGrants,
+                        onOpenTab = { tab -> onOpenHub(f.nickname, tab) },
                         onAvatar = { onOpenProfile(f.nickname) },
                     )
                 }
@@ -430,16 +455,21 @@ private fun RequestRow(
 }
 
 @Composable
-private fun FriendRow(f: FriendDto, onClick: () -> Unit, onAvatar: () -> Unit) {
+private fun FriendRow(
+    f: FriendDto,
+    hasShare: Boolean,
+    onOpenTab: (tab: String) -> Unit,
+    onAvatar: () -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 22.dp, vertical = 10.dp),
+            .clickable { onOpenTab("conversa") }
+            .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
     ) {
-        Avatar(f.nickname, online = f.online, modifier = Modifier.clickable(onClick = onAvatar))
+        Avatar(f.nickname, size = 40, online = f.online, modifier = Modifier.clickable(onClick = onAvatar))
         Column(Modifier.weight(1f)) {
             Text("@${f.nickname}", style = MaterialTheme.typography.titleMedium)
             Text(
@@ -448,6 +478,32 @@ private fun FriendRow(f: FriendDto, onClick: () -> Unit, onAvatar: () -> Unit) {
                 color = if (f.online) NotifyShareColors.online else NotifyShareColors.muted,
             )
         }
-        Icon(NotifyIcons.Chevron, null, tint = NotifyShareColors.muted)
+        RowIcon(NotifyIcons.Chat, "Conversa") { onOpenTab("conversa") }
+        RowIcon(NotifyIcons.Bell, "Notificações") { onOpenTab("notificacoes") }
+        if (hasShare) {
+            RowIcon(NotifyIcons.Sliders, "Apps") { onOpenTab("apps") }
+        } else {
+            RowIcon(NotifyIcons.Plus, "Compartilhar apps", tint = MaterialTheme.colorScheme.primary) {
+                onOpenTab("apps")
+            }
+        }
     }
+}
+
+@Composable
+private fun RowIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    tint: androidx.compose.ui.graphics.Color = NotifyShareColors.muted,
+    onClick: () -> Unit,
+) {
+    Icon(
+        icon,
+        contentDescription,
+        tint = tint,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+            .size(20.dp),
+    )
 }

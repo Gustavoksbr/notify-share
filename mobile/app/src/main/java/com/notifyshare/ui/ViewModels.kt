@@ -67,3 +67,10 @@ class UserProfileViewModelFactory(private val c: AppContainer, private val nickn
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         com.notifyshare.ui.profile.UserProfileViewModel(c.socialRepository, nickname) as T
 }
+
+class PersonHubViewModelFactory(private val c: AppContainer, private val nickname: String) :
+    ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        com.notifyshare.ui.hub.PersonHubViewModel(c.socialRepository, nickname) as T
+}

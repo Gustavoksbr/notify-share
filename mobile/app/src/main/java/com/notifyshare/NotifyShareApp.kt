@@ -40,6 +40,7 @@ class AppContainer(context: Context) {
 
     val session = SessionState()
     val shareState = ShareState(context.applicationContext)
+    val serviceSwitch = com.notifyshare.data.local.ServiceSwitch(context.applicationContext)
     val cache = JsonCache(context.applicationContext) { tokenStore.activeId() }
     val recentApps = com.notifyshare.data.local.RecentAppsStore(context.applicationContext)
 
@@ -122,6 +123,12 @@ class NotifyShareApp : Application() {
 
     fun refreshSharing() {
         container.appScope.launch {
+            // interruptor mestre: desligado = servico parado, sem mais nada
+            if (!container.serviceSwitch.enabledNow()) {
+                runCatching { ShareForegroundService.stop(this@NotifyShareApp) }
+                container.shareState.update(false, 0)
+                return@launch
+            }
             val grants = container.socialRepository.grants("sharer")
             val active = (grants as? ApiResult.Ok)?.value?.count { it.isActive } ?: return@launch
             container.shareState.update(active > 0, active)

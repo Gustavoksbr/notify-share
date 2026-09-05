@@ -36,6 +36,12 @@ interface NotifyShareApi {
     @GET("me")
     suspend fun me(): Response<UserDto>
 
+    @GET("me/export")
+    suspend fun exportData(): Response<okhttp3.ResponseBody>
+
+    @DELETE("me")
+    suspend fun deleteAccount(): Response<Unit>
+
     // --- aparelhos --------------------------------------------------
     @PUT("devices")
     suspend fun registerDevice(@Body body: RegisterDeviceBody): Response<Unit>
@@ -128,6 +134,12 @@ interface NotifyShareApi {
     @POST("events")
     suspend fun ingest(@Body body: IngestEventBody): Response<IngestResultDto>
 
+    @POST("events/test")
+    suspend fun sendTestNotification(): Response<IngestResultDto>
+
+    @DELETE("events/mine")
+    suspend fun deleteMyHistory(): Response<Unit>
+
     @GET("events")
     suspend fun feed(
         @Query("from") from: String? = null,
@@ -156,6 +168,28 @@ interface NotifyShareApi {
 
     @GET("events/unread-count")
     suspend fun eventUnreadCount(): Response<CountDto>
+
+    @GET("events/events/{eventId}/location")
+    suspend fun eventLocation(
+        @Path("eventId") eventId: String,
+        @Query("from") from: String? = null,
+        @Query("package") packageName: String? = null,
+        @Query("type") type: String? = null,
+        @Query("sender") sender: String? = null,
+        @Query("period") period: String = "all",
+        @Query("pageSize") pageSize: Int = 50,
+    ): Response<EventLocationDto>
+
+    @GET("events/events/{eventId}/context")
+    suspend fun eventContext(
+        @Path("eventId") eventId: String,
+        @Query("from") from: String? = null,
+        @Query("package") packageName: String? = null,
+        @Query("type") type: String? = null,
+        @Query("sender") sender: String? = null,
+        @Query("period") period: String = "all",
+        @Query("size") size: Int = 50,
+    ): Response<List<FeedItemDto>>
 
     // --- conversas ---------------------------------------------
     @GET("conversations/{nickname}")

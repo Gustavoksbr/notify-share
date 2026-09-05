@@ -199,6 +199,8 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
             block()
         } finally {
             _state.update { it.copy(busy = it.busy - key) }
+            // qualquer acao de grant: outras telas (Amigos, hub, Pedidos) releem
+            com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
         }
     }
 }

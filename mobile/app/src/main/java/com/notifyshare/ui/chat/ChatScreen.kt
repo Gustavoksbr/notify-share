@@ -134,7 +134,9 @@ class ChatViewModel(
         val id = _state.value.linkedEventId ?: return
         val found = items.firstNotNullOfOrNull { it.linkedEvent?.takeIf { e -> e.eventId == id } }
         if (found != null) {
-            _state.value = _state.value.copy(linkedEventLabel = prettyPackage(found.packageName))
+            _state.value = _state.value.copy(
+                linkedEventLabel = "${prettyPackage(found.packageName)} · ${shortTime(found.occurredAt)}",
+            )
         }
     }
 
@@ -164,6 +166,12 @@ class ChatViewModel(
 
     fun clearLinkedEvent() {
         _state.value = _state.value.copy(linkedEventId = null, linkedEventLabel = null)
+    }
+
+    /** Vincula uma notificacao a proxima mensagem (veio da aba Notificacoes do hub). */
+    fun linkEvent(eventId: String) {
+        _state.value = _state.value.copy(linkedEventId = eventId.takeIf { it.isNotBlank() })
+        resolveLinkedLabel(_state.value.items)
     }
 
     fun deleteMessage(item: TimelineItemDto) = viewModelScope.launch {
@@ -221,6 +229,8 @@ fun ChatScreen(
     onOpenNotifications: () -> Unit,
     onOpenLinkedNotification: (eventId: String) -> Unit,
     onOpenProfile: () -> Unit,
+    /** Dentro do hub da pessoa o cabecalho ja existe uma vez so, entao some daqui. */
+    embedded: Boolean = false,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -244,41 +254,43 @@ fun ChatScreen(
             .fillMaxSize()
             .imePadding(),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-        ) {
-            Icon(
-                NotifyIcons.Back, "Voltar",
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.clickable(onClick = onBack).padding(12.dp),
-            )
-            Avatar(
-                nickname, size = 36, online = state.online,
-                modifier = Modifier.clickable(onClick = onOpenProfile),
-            )
-            Column(Modifier.weight(1f).clickable(onClick = onOpenProfile)) {
-                Text("@$nickname", style = MaterialTheme.typography.titleMedium)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    StatusDot(state.online)
-                    Text(
-                        if (state.online) "Online" else
-                            listOf("Offline", relativeShort(state.lastSeen)).filter { it.isNotBlank() }.joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (state.online) NotifyShareColors.online else NotifyShareColors.muted,
-                    )
+        if (!embedded) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            ) {
+                Icon(
+                    NotifyIcons.Back, "Voltar",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.clickable(onClick = onBack).padding(12.dp),
+                )
+                Avatar(
+                    nickname, size = 36, online = state.online,
+                    modifier = Modifier.clickable(onClick = onOpenProfile),
+                )
+                Column(Modifier.weight(1f).clickable(onClick = onOpenProfile)) {
+                    Text("@$nickname", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        StatusDot(state.online)
+                        Text(
+                            if (state.online) "Online" else
+                                listOf("Offline", relativeShort(state.lastSeen)).filter { it.isNotBlank() }.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (state.online) NotifyShareColors.online else NotifyShareColors.muted,
+                        )
+                    }
                 }
+                Text(
+                    "Notificações",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClick = onOpenNotifications).padding(8.dp),
+                )
             }
-            Text(
-                "Notificações",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClick = onOpenNotifications).padding(8.dp),
-            )
         }
 
         if (state.loading) {
@@ -407,7 +419,7 @@ private fun ComposeContext(
             onCancel,
         )
         state.linkedEventId != null -> ContextBar(
-            "Sobre a notificação",
+            "Mencionando notificação",
             state.linkedEventLabel ?: "notificação selecionada",
             onClearLinked,
         )
@@ -506,9 +518,7 @@ private fun MessageBubble(
                 }
 
                 item.linkedEvent?.let { e ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Column(
                         modifier = Modifier
                             .padding(bottom = 6.dp)
                             .background(
@@ -518,12 +528,26 @@ private fun MessageBubble(
                             .clickable { onOpenLinked(e.eventId) }
                             .padding(horizontal = 8.dp, vertical = 5.dp),
                     ) {
-                        com.notifyshare.ui.common.AppIcon(e.packageName, size = 18.dp)
-                        Text(
-                            "sobre ${prettyPackage(e.packageName)} · ${shortTime(e.occurredAt)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            com.notifyshare.ui.common.AppIcon(e.packageName, size = 18.dp)
+                            Text(
+                                "${prettyPackage(e.packageName)} · ${shortTime(e.occurredAt)}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        e.preview?.let { preview ->
+                            Text(
+                                preview,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = NotifyShareColors.muted,
+                                maxLines = 2,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
                 }
 

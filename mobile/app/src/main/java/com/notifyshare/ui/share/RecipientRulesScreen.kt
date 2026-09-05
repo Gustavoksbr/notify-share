@@ -69,6 +69,7 @@ class RecipientRulesViewModel(
         )
         viewModelScope.launch {
             if (repo.setNotifyRule(grantId, pkg, notify) is ApiResult.Failure) load()
+            else com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
         }
     }
 }
@@ -108,7 +109,7 @@ fun RecipientRulesScreen(vm: RecipientRulesViewModel, nickname: String, onBack: 
                     ) {
                         com.notifyshare.ui.common.AppIcon(rule.packageName, size = 36.dp)
                         Column(Modifier.weight(1f)) {
-                            Text(prettyPackage(rule.packageName), style = MaterialTheme.typography.bodyLarge)
+                            Text(com.notifyshare.ui.common.appLabel(rule.packageName), style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 if (rule.notify) "Notifica você" else "Só no feed — sem aviso",
                                 style = MaterialTheme.typography.labelSmall,

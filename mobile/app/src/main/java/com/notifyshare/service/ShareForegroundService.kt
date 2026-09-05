@@ -68,12 +68,19 @@ class ShareForegroundService : Service() {
         val text = if (count > 0) "Compartilhando com $count " + (if (count == 1) "pessoa" else "pessoas")
         else "Servico ativo"
 
+        val disable = PendingIntent.getBroadcast(
+            this, 1,
+            Intent(this, ServiceControlReceiver::class.java).setAction(ServiceControlReceiver.ACTION_DISABLE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         val notification = NotificationCompat.Builder(this, NotificationChannels.SERVICE)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Notify Share")
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(open)
+            .addAction(android.R.drawable.ic_lock_power_off, "Desligar", disable)
             .build()
 
         ServiceCompat.startForeground(

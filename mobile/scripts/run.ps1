@@ -3,11 +3,12 @@
     Compila e instala o app em um ou varios aparelhos, apontado para dev ou producao.
 
 .DESCRIPTION
-    -Target dev  (padrao): app fala com http://localhost:8080 pelo cabo. O passo
-        que quase sempre esquecemos e o `adb reverse` — sem ele o app sobe mas
-        nao acha o backend e todo login falha por rede. Por isso ele esta aqui
-        dentro, feito para CADA aparelho. -BackendPort troca a ponta no PC
-        (8081 = backend de E2E).
+    -Target dev  (padrao): o app fala com http://localhost:8080 (isso e fixo no
+        build de dev). O `adb reverse` liga esse 8080 do aparelho a porta do
+        backend no PC — 8085 por padrao. O passo que quase sempre esquecemos e o
+        `adb reverse`; por isso ele esta aqui dentro, feito para CADA aparelho.
+        -BackendPort troca so a ponta no PC (8081 = backend de E2E). Se voce
+        mudar a porta do BACKEND DEV, mude aqui tambem (ou no terminals.json).
 
     -Target prod: app fala com https://notify-share.onrender.com. Nao precisa de
         ponte USB — vai direto pela internet. E o build "release" (pacote
@@ -30,7 +31,9 @@
 param(
     [ValidateSet("dev", "prod")]
     [string]$Target = "dev",
-    [int]   $BackendPort = 8080,
+    # Porta do backend de dev NO PC (o aparelho sempre fala 8080; o adb reverse
+    # redireciona). Precisa bater com o SERVER_PORT do BACKEND DEV. 8081 = E2E.
+    [int]   $BackendPort = 8085,
     [string]$Serial,
     [switch]$AllDevices,
     [switch]$SkipBuild,

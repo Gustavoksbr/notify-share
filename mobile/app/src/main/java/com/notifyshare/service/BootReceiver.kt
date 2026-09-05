@@ -29,7 +29,7 @@ class BootReceiver : BroadcastReceiver() {
 class BootWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val container = (applicationContext as NotifyShareApp).container
-        if (container.shareState.isActiveNow()) {
+        if (container.serviceSwitch.enabledNow() && container.shareState.isActiveNow()) {
             ShareForegroundService.start(applicationContext)
             WatchdogWorker.schedule(applicationContext)
         }

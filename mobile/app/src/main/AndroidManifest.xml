@@ -20,6 +20,9 @@
          notificam. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- Seletor de contato do WhatsApp em Apps: mostra nome + numero da agenda
+         em vez de pedir para digitar. Pedida so quando o usuario abre o seletor. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <application
         android:name=".NotifyShareApp"
@@ -75,6 +78,11 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Botao "Desligar" da notificacao fixa: desliga o interruptor mestre. -->
+        <receiver
+            android:name=".service.ServiceControlReceiver"
+            android:exported="false" />
 
         <!-- Religa o servico depois do boot, se havia compartilhamento ativo. -->
         <receiver

@@ -36,12 +36,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.remember
 import com.notifyshare.AppContainer
-import com.notifyshare.ui.ChatViewModelFactory
 import com.notifyshare.ui.PersonNotificationsViewModelFactory
 import com.notifyshare.ui.RulesViewModelFactory
 import com.notifyshare.ui.TabViewModelFactory
-import com.notifyshare.ui.chat.ChatScreen
-import com.notifyshare.ui.chat.ChatViewModel
 import com.notifyshare.ui.feed.FeedScreen
 import com.notifyshare.ui.feed.FeedViewModel
 import com.notifyshare.ui.friends.FriendsScreen
@@ -58,6 +55,23 @@ import com.notifyshare.ui.share.RulesViewModel
 import com.notifyshare.ui.share.ShareScreen
 import com.notifyshare.ui.share.ShareViewModel
 import com.notifyshare.ui.theme.NotifyIcons
+import kotlinx.coroutines.launch
+
+/** Compartilha o JSON exportado via a folha de compartilhamento do sistema. */
+private fun shareExport(context: android.content.Context, text: String) {
+    runCatching {
+        context.startActivity(
+            android.content.Intent.createChooser(
+                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(android.content.Intent.EXTRA_TITLE, "notify-share-dados.json")
+                    putExtra(android.content.Intent.EXTRA_TEXT, text)
+                },
+                "Salvar meus dados",
+            ),
+        )
+    }
+}
 
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
     data object Feed : Tab("feed", "Feed", NotifyIcons.Bell)
@@ -73,6 +87,22 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
     val nav = rememberNavController()
     val tabFactory = remember(container) { TabViewModelFactory(container) }
     val context = LocalContext.current
+
+    // Android 13+: pede a permissao de POSTAR notificacoes uma vez. Sem ela o
+    // sistema engole todo aviso do app. Ler notificacoes dos outros (NLS) e
+    // outra permissao, tratada na tela de Permissoes.
+    val postNotifLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) {}
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            postNotifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     // O WebSocket em si e ligado/desligado pelo ProcessLifecycleOwner (primeiro
     // plano). Aqui sincronizamos o servico de compartilhamento e garantimos o
@@ -91,8 +121,9 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
         when {
             openTarget == "feed" -> nav.navigate(Tab.Feed.route)
             openTarget == "grants" -> nav.navigate(Tab.Share.route)
+            openTarget == "permissions" -> nav.navigate("permissions")
             openTarget?.startsWith("chat:") == true ->
-                nav.navigate("chat/${openTarget.removePrefix("chat:")}")
+                nav.navigate("hub/${openTarget.removePrefix("chat:")}/conversa")
         }
     }
 
@@ -181,7 +212,10 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val vm: FeedViewModel = viewModel(factory = tabFactory)
                 FeedScreen(
                     vm = vm,
-                    onOpenPerson = { nick -> nav.navigate("person/$nick") },
+                    onOpenPerson = { nick -> nav.navigate("person/$nick?from=feed") },
+                    onReplyToNotification = { eventId, from ->
+                        nav.navigate("hub/$from/conversa?linkedEvent=$eventId")
+                    },
                 )
             }
             composable(Tab.Friends.route) {
@@ -189,8 +223,8 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 FriendsScreen(
                     vm = vm,
                     onOpenRequests = { nav.navigate("requests") },
-                    onOpenChat = { nick -> nav.navigate("chat/$nick") },
-                    onOpenProfile = { nick -> nav.navigate("user/$nick") },
+                    onOpenHub = { nick, hubTab -> nav.navigate("hub/$nick/$hubTab") },
+                    onOpenProfile = { nick -> nav.navigate("user/$nick?from=friends") },
                 )
             }
             composable(Tab.Share.route) {
@@ -200,7 +234,7 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     onOpenRequests = { nav.navigate("requests") },
                     onOpenRules = { grantId, nick -> nav.navigate("rules/$grantId/$nick") },
                     onOpenNotifyRules = { grantId, nick -> nav.navigate("notify-rules/$grantId/$nick") },
-                    onOpenNotifications = { nick -> nav.navigate("person/$nick") },
+                    onOpenNotifications = { nick -> nav.navigate("person/$nick?from=share") },
                 )
             }
             composable(Tab.Profile.route) {
@@ -209,6 +243,34 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     vm = vm,
                     onOpenPermissions = { nav.navigate("permissions") },
                     onOpenAccounts = { nav.navigate("accounts") },
+                    onOpenPrivacy = { nav.navigate("privacy") },
+                    onOpenDangerZone = { nav.navigate("danger-zone") },
+                )
+            }
+
+            composable("privacy") {
+                val ctx = LocalContext.current
+                com.notifyshare.ui.settings.PrivacyScreen(
+                    onBack = { nav.popBackStack() },
+                    onExport = { container.authRepository.exportData() },
+                    onSaveExport = { text -> shareExport(ctx, text) },
+                )
+            }
+
+            composable("danger-zone") {
+                // mesma instancia do ProfileViewModel (o tabFactory nao guarda estado
+                // entre navegacoes, mas deleteAccount so precisa do que ja esta nela)
+                val vm: ProfileViewModel = viewModel(factory = tabFactory)
+                val ctx = LocalContext.current
+                com.notifyshare.ui.profile.DangerZoneScreen(
+                    vm = vm,
+                    onBack = { nav.popBackStack() },
+                    onDeleteHistory = {
+                        container.feedRepository.deleteMyHistory() is com.notifyshare.data.ApiResult.Ok
+                    },
+                    onAccountDeleted = { com.notifyshare.ui.restartUiForAccountChange(ctx) },
+                    onExport = { container.authRepository.exportData() },
+                    onSaveExport = { text -> shareExport(ctx, text) },
                 )
             }
 
@@ -216,7 +278,10 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val vm: com.notifyshare.ui.profile.AccountsViewModel = viewModel(factory = tabFactory)
                 com.notifyshare.ui.profile.AccountsScreen(
                     vm = vm,
-                    onBack = { nav.popBackStack() },
+                    onBack = { 
+                        // Volta para a tela anterior
+                        nav.popBackStack()
+                    },
                     onAddAccount = onAddAccount,
                 )
             }
@@ -225,14 +290,17 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val vm: ShareViewModel = viewModel(factory = tabFactory)
                 RequestsScreen(
                     vm = vm,
-                    onBack = { nav.popBackStack() },
-                    onOpenNotifications = { nick -> nav.navigate("person/$nick") },
+                    onBack = { 
+                        // Volta para a tela anterior
+                        nav.popBackStack()
+                    },
+                    onOpenNotifications = { nick -> nav.navigate("person/$nick?from=requests") },
                 )
             }
             composable(
-                "chat/{nickname}?linkedEvent={linkedEvent}",
+                "user/{nickname}?from={from}",
                 arguments = listOf(
-                    androidx.navigation.navArgument("linkedEvent") {
+                    androidx.navigation.navArgument("from") {
                         type = androidx.navigation.NavType.StringType
                         nullable = true
                         defaultValue = null
@@ -240,27 +308,30 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 ),
             ) { entry ->
                 val nick = entry.arguments?.getString("nickname").orEmpty()
-                val linked = entry.arguments?.getString("linkedEvent")
-                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(container, nick, linked))
-                ChatScreen(vm = vm, nickname = nick, onBack = { nav.popBackStack() },
-                    onOpenNotifications = { nav.navigate("person/$nick") },
-                    onOpenLinkedNotification = { evId -> nav.navigate("person/$nick?highlight=$evId") },
-                    onOpenProfile = { nav.navigate("user/$nick") })
-            }
-            composable("user/{nickname}") { entry ->
-                val nick = entry.arguments?.getString("nickname").orEmpty()
+                val from = entry.arguments?.getString("from")
                 val vm: com.notifyshare.ui.profile.UserProfileViewModel =
                     viewModel(factory = com.notifyshare.ui.UserProfileViewModelFactory(container, nick))
                 com.notifyshare.ui.profile.UserProfileScreen(
                     vm = vm,
-                    onBack = { nav.popBackStack() },
-                    onOpenChat = { n -> nav.navigate("chat/$n") },
+                    onBack = {
+                        // Volta para onde veio
+                        when (from) {
+                            "friends" -> nav.popBackStack(Tab.Friends.route, inclusive = false)
+                            else -> nav.popBackStack()
+                        }
+                    },
+                    onOpenChat = { n -> nav.navigate("hub/$n/conversa") },
                 )
             }
             composable(
-                "person/{nickname}?highlight={highlight}",
+                "person/{nickname}?highlight={highlight}&from={from}",
                 arguments = listOf(
                     androidx.navigation.navArgument("highlight") {
+                        type = androidx.navigation.NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                    androidx.navigation.navArgument("from") {
                         type = androidx.navigation.NavType.StringType
                         nullable = true
                         defaultValue = null
@@ -274,15 +345,61 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 PersonNotificationsScreen(
                     vm = vm, nickname = nick, onBack = { nav.popBackStack() },
                     highlightEventId = highlight,
-                    onReplyToNotification = { eventId -> nav.navigate("chat/$nick?linkedEvent=$eventId") },
+                    onReplyToNotification = { eventId ->
+                        nav.navigate("hub/$nick/conversa?linkedEvent=$eventId")
+                    },
                 )
+            }
+            composable(
+                "hub/{nickname}/{tab}?linkedEvent={linkedEvent}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("linkedEvent") {
+                        type = androidx.navigation.NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                val nick = entry.arguments?.getString("nickname").orEmpty()
+                val hubTab = entry.arguments?.getString("tab")
+                val linkedEvent = entry.arguments?.getString("linkedEvent")
+                com.notifyshare.ui.hub.PersonHubScreen(
+                    container = container,
+                    hubEntry = entry,
+                    nickname = nick,
+                    initialTab = hubTab,
+                    initialLinkedEvent = linkedEvent,
+                    onBack = { nav.popBackStack() },
+                    onOpenProfile = { nav.navigate("user/$nick?from=hub") },
+                    onOpenAppPicker = { grantId -> nav.navigate("hub-apps/$grantId/$nick") },
+                )
+            }
+            composable("hub-apps/{grantId}/{nickname}") { entry ->
+                val grantId = entry.arguments?.getString("grantId").orEmpty()
+                val nick = entry.arguments?.getString("nickname").orEmpty()
+                // Mesmo RulesViewModel da aba "Apps" do hub: o seletor mexe no
+                // estado nao salvo (dirty) que a aba precisa manter ao voltar.
+                val hostEntry = remember(entry) { nav.previousBackStackEntry }
+                val vm: RulesViewModel = if (hostEntry != null) {
+                    viewModel(
+                        viewModelStoreOwner = hostEntry,
+                        key = "hub-rules-$grantId",
+                        factory = RulesViewModelFactory(container, grantId),
+                    )
+                } else {
+                    viewModel(factory = RulesViewModelFactory(container, grantId))
+                }
+                AppPickerScreen(vm = vm, nickname = nick, onBack = { nav.popBackStack() })
             }
             composable("rules/{grantId}/{nickname}") { entry ->
                 val grantId = entry.arguments?.getString("grantId").orEmpty()
                 val nick = entry.arguments?.getString("nickname").orEmpty()
                 val vm: RulesViewModel = viewModel(factory = RulesViewModelFactory(container, grantId))
                 RulesScreen(
-                    vm = vm, nickname = nick, onBack = { nav.popBackStack() },
+                    vm = vm, nickname = nick, onBack = { 
+                        // Volta para a tela anterior
+                        nav.popBackStack()
+                    },
                     onPickApps = { nav.navigate("apps/$grantId/$nick") },
                 )
             }
@@ -299,7 +416,10 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     viewModelStoreOwner = rulesEntry,
                     factory = RulesViewModelFactory(container, grantId),
                 )
-                AppPickerScreen(vm = vm, nickname = nick, onBack = { nav.popBackStack() })
+                AppPickerScreen(vm = vm, nickname = nick, onBack = { 
+                    // Volta para Rules (pai direto)
+                    nav.popBackStack()
+                })
             }
             composable("notify-rules/{grantId}/{nickname}") { entry ->
                 val grantId = entry.arguments?.getString("grantId").orEmpty()
@@ -307,12 +427,32 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val vm: com.notifyshare.ui.share.RecipientRulesViewModel =
                     viewModel(factory = com.notifyshare.ui.RecipientRulesViewModelFactory(container, grantId))
                 com.notifyshare.ui.share.RecipientRulesScreen(
-                    vm = vm, nickname = nick, onBack = { nav.popBackStack() },
+                    vm = vm, nickname = nick, onBack = { 
+                        // Volta para a tela anterior
+                        nav.popBackStack()
+                    },
                 )
             }
             composable("permissions") {
                 val fcmStatus by container.fcmStatus.collectAsStateWithLifecycle(initialValue = null)
-                PermissionsScreen(fcmStatus = fcmStatus, onBack = { nav.popBackStack() })
+                val serviceEnabled by container.serviceSwitch.enabled
+                    .collectAsStateWithLifecycle(initialValue = true)
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                PermissionsScreen(
+                    fcmStatus = fcmStatus,
+                    onBack = { nav.popBackStack() },
+                    onSendTest = {
+                        (container.feedRepository.sendTestNotification()
+                            as? com.notifyshare.data.ApiResult.Ok)?.value?.deliveries
+                    },
+                    serviceEnabled = serviceEnabled,
+                    onSetService = { on ->
+                        scope.launch {
+                            container.serviceSwitch.set(on)
+                            (context.applicationContext as? NotifyShareApp)?.refreshSharing()
+                        }
+                    },
+                )
             }
             }
         }
