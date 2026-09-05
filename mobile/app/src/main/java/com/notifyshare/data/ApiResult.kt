@@ -20,6 +20,8 @@ sealed interface ApiResult<out T> {
         val code: String,
         val message: String,
         val field: String? = null,
+        val attemptsRemaining: Int? = null,
+        val retryAfterSeconds: Long? = null,
     ) : ApiResult<Nothing>
 
     companion object {
@@ -68,6 +70,6 @@ fun isConnectivityFailure(failure: ApiResult.Failure): Boolean =
 fun String?.toApiFailure(json: Json): ApiResult.Failure {
     if (isNullOrBlank()) return ApiResult.Failure("unknown_error", "Nao foi possivel completar a operacao")
     return runCatching { json.decodeFromString<ApiErrorDto>(this) }
-        .map { ApiResult.Failure(it.code, it.message, it.field) }
+        .map { ApiResult.Failure(it.code, it.message, it.field, it.attemptsRemaining, it.retryAfterSeconds) }
         .getOrElse { ApiResult.Failure("unknown_error", "Nao foi possivel completar a operacao") }
 }

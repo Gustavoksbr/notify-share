@@ -33,6 +33,7 @@ class AuthService(
     private val passwordEncoder: PasswordEncoder,
     private val revoker: RefreshTokenRevoker,
     private val googleVerifier: GoogleTokenVerifier,
+    private val loginAttempts: LoginAttemptGuard,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -91,6 +92,8 @@ class AuthService(
     @Transactional
     fun login(identifier: String, password: String, deviceLabel: String?): IssuedTokens {
         val normalized = identifier.trim().lowercase()
+        loginAttempts.assertNotLocked(normalized)
+
         val user = (if (normalized.contains('@')) users.findByEmail(normalized) else users.findByNickname(normalized))
 
         // Conta que so tem Google e o identificador foi um e-mail: vale a dica
@@ -104,9 +107,10 @@ class AuthService(
         // senha errada, de proposito: nao entregamos um oraculo de nicknames.
         val hash = user?.passwordHash
         if (user == null || hash == null || !passwordEncoder.matches(password, hash)) {
-            throw UnauthorizedException("invalid_credentials", "Nickname ou senha incorretos")
+            loginAttempts.recordFailure(normalized)
         }
 
+        loginAttempts.recordSuccess(normalized)
         return issueFor(user, familyId = UUID.randomUUID(), deviceLabel = deviceLabel)
     }
 

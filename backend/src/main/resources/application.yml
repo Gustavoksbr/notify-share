@@ -54,6 +54,13 @@ notifyshare:
     refresh-ttl: P90D
     refresh-reuse-grace: PT60S
 
+  auth:
+    # Bloqueio temporario de login por senha errada, por identificador
+    # (nickname/e-mail digitado). Curto por padrao de proposito — e so
+    # ajustar aqui se sentir necessidade depois.
+    login-max-attempts: ${LOGIN_MAX_ATTEMPTS:11}
+    login-lockout-duration: ${LOGIN_LOCKOUT_DURATION:PT1M}
+
   google:
     # Client ID "Web application" do Google Cloud. Vazio = login com Google off.
     client-id: ${GOOGLE_CLIENT_ID:}

@@ -97,6 +97,8 @@ class RealtimeClient(
                     AppEvents.signal(AppEvents.GRANTS)
                     AppEvents.signal(AppEvents.FRIENDS)
                 }
+                text.contains("\"type\":\"friend_request\"") ||
+                    text.contains("\"type\":\"friend_accepted\"") -> AppEvents.signal(AppEvents.FRIENDS)
                 text.contains("\"type\":\"presence\"") -> {
                     AppEvents.signal(AppEvents.PRESENCE)
                     AppEvents.signal(AppEvents.FRIENDS)

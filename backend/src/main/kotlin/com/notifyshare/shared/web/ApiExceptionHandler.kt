@@ -14,7 +14,8 @@ class ApiExceptionHandler {
 
     @ExceptionHandler(ApiException::class)
     fun handleApi(e: ApiException): ResponseEntity<ApiErrorResponse> =
-        ResponseEntity.status(e.status).body(ApiErrorResponse(e.code, e.message, e.field))
+        ResponseEntity.status(e.status)
+            .body(ApiErrorResponse(e.code, e.message, e.field, e.attemptsRemaining, e.retryAfterSeconds))
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleBeanValidation(e: MethodArgumentNotValidException): ResponseEntity<ApiErrorResponse> {

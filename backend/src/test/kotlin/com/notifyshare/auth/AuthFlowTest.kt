@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
     // Este teste registra/loga varias vezes seguidas a partir do mesmo IP de
     // loopback — desliga o rate limit pra nao confundir trafego de teste com
     // abuso (RateLimitFilterTest cobre o comportamento do limite em si).
-    properties = ["notifyshare.rate-limit.enabled=false"],
+    properties = ["notifyshare.rate-limit.enabled=false", "notifyshare.auth.login-lockout-enabled=false"],
 )
 @Import(PostgresTestContainer::class)
 class AuthFlowTest {

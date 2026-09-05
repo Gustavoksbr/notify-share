@@ -3,6 +3,8 @@ package com.notifyshare.friends.application
 import com.notifyshare.auth.adapter.persistence.UserRepository
 import com.notifyshare.friends.adapter.persistence.FriendshipRepository
 import com.notifyshare.friends.domain.Friendship
+import com.notifyshare.push.application.PushMessage
+import com.notifyshare.push.application.PushNotifier
 import com.notifyshare.realtime.application.RealtimePort
 import com.notifyshare.shared.web.ConflictException
 import com.notifyshare.shared.web.ForbiddenException
@@ -36,6 +38,7 @@ class FriendService(
     private val users: UserRepository,
     private val realtime: RealtimePort,
     private val eventPublisher: ApplicationEventPublisher,
+    private val pushNotifier: PushNotifier,
 ) {
 
     // --- consultas usadas por outras features --------------------------------
@@ -125,6 +128,7 @@ class FriendService(
             throw ValidationException("self_friend", "Voce nao pode adicionar voce mesmo")
         }
 
+        val myNickname = users.findById(requesterId).map { it.nickname }.orElse("")
         val existing = friendships.findBetween(requesterId, target.id)
         val relation = when {
             existing == null -> {
@@ -137,6 +141,7 @@ class FriendService(
                         alsoRequestShare = alsoRequestShare,
                     )
                 )
+                pushNotifier.notifyUser(target.id, PushMessage("friend_request", mapOf("actor" to myNickname)))
                 "request_sent"
             }
             existing.status == Friendship.ACCEPTED ->
@@ -149,6 +154,7 @@ class FriendService(
                 existing.status = Friendship.ACCEPTED
                 existing.respondedAt = Instant.now()
                 friendships.save(existing)
+                pushNotifier.notifyUser(target.id, PushMessage("friend_accepted", mapOf("actor" to myNickname)))
                 publishAccepted(requesterId, target.nickname, alsoOfferShare, alsoRequestShare)
                 "friend"
             }
@@ -182,6 +188,10 @@ class FriendService(
             friendships.save(f)
             val addresseeNickname = users.findById(userId).map { it.nickname }.orElse(null)
             if (addresseeNickname != null) {
+                pushNotifier.notifyUser(
+                    f.requesterId,
+                    PushMessage("friend_accepted", mapOf("actor" to addresseeNickname)),
+                )
                 publishAccepted(f.requesterId, addresseeNickname, f.alsoOfferShare, f.alsoRequestShare)
             }
         } else {

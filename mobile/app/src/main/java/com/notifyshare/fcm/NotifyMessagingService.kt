@@ -32,6 +32,7 @@ class NotifyMessagingService : FirebaseMessagingService() {
                 AppEvents.signal(AppEvents.GRANTS)
                 AppEvents.signal(AppEvents.FRIENDS)
             }
+            "friend_request", "friend_accepted" -> AppEvents.signal(AppEvents.FRIENDS)
             "presence" -> AppEvents.signal(AppEvents.PRESENCE)
         }
     }

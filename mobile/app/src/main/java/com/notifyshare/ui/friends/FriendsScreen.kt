@@ -183,7 +183,6 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
 @Composable
 fun FriendsScreen(
     vm: FriendsViewModel,
-    onOpenRequests: () -> Unit,
     /** Abre o hub da pessoa numa aba: "conversa" | "notificacoes" | "apps". */
     onOpenHub: (nickname: String, tab: String) -> Unit,
     onOpenProfile: (String) -> Unit,

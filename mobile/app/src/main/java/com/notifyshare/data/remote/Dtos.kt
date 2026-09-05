@@ -63,4 +63,8 @@ data class ApiErrorDto(
     val code: String,
     val message: String,
     val field: String? = null,
+    /** So vem em invalid_credentials: quantas tentativas erradas ainda restam. */
+    val attemptsRemaining: Int? = null,
+    /** So vem em account_locked: quanto falta, em segundos, pro bloqueio acabar. */
+    val retryAfterSeconds: Long? = null,
 )

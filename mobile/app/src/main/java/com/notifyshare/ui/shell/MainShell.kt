@@ -49,7 +49,8 @@ import com.notifyshare.ui.onboarding.PermissionsScreen
 import com.notifyshare.ui.profile.ProfileScreen
 import com.notifyshare.ui.profile.ProfileViewModel
 import com.notifyshare.ui.share.AppPickerScreen
-import com.notifyshare.ui.share.RequestsScreen
+import com.notifyshare.ui.share.IncomingRequestsScreen
+import com.notifyshare.ui.share.OutgoingRequestsScreen
 import com.notifyshare.ui.share.RulesScreen
 import com.notifyshare.ui.share.RulesViewModel
 import com.notifyshare.ui.share.ShareScreen
@@ -88,6 +89,14 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
     val tabFactory = remember(container) { TabViewModelFactory(container) }
     val context = LocalContext.current
 
+    // Aquece as abas de dados ao entrar: criadas aqui (escopo do shell, nao de
+    // cada rota), o init{load()} de cada uma dispara agora, em paralelo — em vez
+    // de so quando a aba e aberta pela primeira vez. Trocar de aba passa a ser
+    // instantaneo, com os dados ja em maos.
+    val feedVm: FeedViewModel = viewModel(factory = tabFactory)
+    val friendsVm: FriendsViewModel = viewModel(factory = tabFactory)
+    val shareVm: ShareViewModel = viewModel(factory = tabFactory)
+
     // Android 13+: pede a permissao de POSTAR notificacoes uma vez. Sem ela o
     // sistema engole todo aviso do app. Ler notificacoes dos outros (NLS) e
     // outra permissao, tratada na tela de Permissoes.
@@ -117,6 +126,14 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
         }
     }
 
+    // Badges de "pedidos recebidos" nos icones de baixo (Amigos/Compartilhar).
+    LaunchedEffect(Unit) {
+        container.refreshRequestBadges()
+        AppEvents.bus.collect {
+            if (it == AppEvents.GRANTS || it == AppEvents.FRIENDS) container.refreshRequestBadges()
+        }
+    }
+
     LaunchedEffect(openTarget) {
         when {
             openTarget == "feed" -> nav.navigate(Tab.Feed.route)
@@ -131,11 +148,18 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
     val currentRoute = backEntry?.destination?.route
     val showBottomBar = currentRoute in tabs.map { it.route }
 
+    val requestBadges by container.requestBadges.collectAsStateWithLifecycle()
+
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                     tabs.forEach { tab ->
+                        val badgeCount = when (tab) {
+                            Tab.Friends -> requestBadges.incomingFriendRequests
+                            Tab.Share -> requestBadges.incomingShareRequests
+                            else -> 0
+                        }
                         NavigationBarItem(
                             selected = currentRoute == tab.route,
                             onClick = {
@@ -145,7 +169,19 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                                     restoreState = true
                                 }
                             },
-                            icon = { Icon(tab.icon, tab.label) },
+                            icon = {
+                                if (badgeCount > 0) {
+                                    androidx.compose.material3.BadgedBox(
+                                        badge = {
+                                            androidx.compose.material3.Badge {
+                                                Text(if (badgeCount > 99) "99+" else "$badgeCount")
+                                            }
+                                        },
+                                    ) { Icon(tab.icon, tab.label) }
+                                } else {
+                                    Icon(tab.icon, tab.label)
+                                }
+                            },
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -209,9 +245,8 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 startDestination = Tab.Feed.route,
             ) {
             composable(Tab.Feed.route) {
-                val vm: FeedViewModel = viewModel(factory = tabFactory)
                 FeedScreen(
-                    vm = vm,
+                    vm = feedVm,
                     onOpenPerson = { nick -> nav.navigate("person/$nick?from=feed") },
                     onReplyToNotification = { eventId, from ->
                         nav.navigate("hub/$from/conversa?linkedEvent=$eventId")
@@ -219,19 +254,17 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 )
             }
             composable(Tab.Friends.route) {
-                val vm: FriendsViewModel = viewModel(factory = tabFactory)
                 FriendsScreen(
-                    vm = vm,
-                    onOpenRequests = { nav.navigate("requests") },
+                    vm = friendsVm,
                     onOpenHub = { nick, hubTab -> nav.navigate("hub/$nick/$hubTab") },
                     onOpenProfile = { nick -> nav.navigate("user/$nick?from=friends") },
                 )
             }
             composable(Tab.Share.route) {
-                val vm: ShareViewModel = viewModel(factory = tabFactory)
                 ShareScreen(
-                    vm = vm,
-                    onOpenRequests = { nav.navigate("requests") },
+                    vm = shareVm,
+                    onOpenIncomingRequests = { nav.navigate("requests-incoming") },
+                    onOpenOutgoingRequests = { nav.navigate("requests-outgoing") },
                     onOpenRules = { grantId, nick -> nav.navigate("rules/$grantId/$nick") },
                     onOpenNotifyRules = { grantId, nick -> nav.navigate("notify-rules/$grantId/$nick") },
                     onOpenNotifications = { nick -> nav.navigate("person/$nick?from=share") },
@@ -286,15 +319,17 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 )
             }
 
-            composable("requests") {
-                val vm: ShareViewModel = viewModel(factory = tabFactory)
-                RequestsScreen(
-                    vm = vm,
-                    onBack = { 
-                        // Volta para a tela anterior
-                        nav.popBackStack()
-                    },
+            composable("requests-incoming") {
+                IncomingRequestsScreen(
+                    vm = shareVm,
+                    onBack = { nav.popBackStack() },
                     onOpenNotifications = { nick -> nav.navigate("person/$nick?from=requests") },
+                )
+            }
+            composable("requests-outgoing") {
+                OutgoingRequestsScreen(
+                    vm = shareVm,
+                    onBack = { nav.popBackStack() },
                 )
             }
             composable(

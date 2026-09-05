@@ -22,8 +22,21 @@ import com.notifyshare.session.SessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Contagem de pedidos pendentes que precisam de uma acao (aceitar/recusar),
+ * para os badges dos icones de baixo. So o "incoming" entra aqui: o que o
+ * usuario esta esperando de resposta (outgoing) nao pede nada dele agora.
+ */
+data class RequestBadges(
+    val incomingShareRequests: Int = 0,
+    val incomingFriendRequests: Int = 0,
+)
 
 /**
  * Container de dependencias feito a mao. O grafo cresceu com as features novas
@@ -64,6 +77,22 @@ class AppContainer(context: Context) {
     @Volatile
     var sharingActive: Boolean = false
         private set
+
+    private val _requestBadges = MutableStateFlow(RequestBadges())
+    val requestBadges: StateFlow<RequestBadges> = _requestBadges.asStateFlow()
+
+    /** Chamado ao abrir o app e a cada evento de grant/amizade. Mantem o ultimo
+     *  valor conhecido se uma das duas chamadas falhar, em vez de zerar o badge. */
+    suspend fun refreshRequestBadges() {
+        val grants = socialRepository.pendingGrants()
+        val friends = socialRepository.friendRequests()
+        _requestBadges.value = RequestBadges(
+            incomingShareRequests = (grants as? ApiResult.Ok)?.value?.incoming?.size
+                ?: _requestBadges.value.incomingShareRequests,
+            incomingFriendRequests = (friends as? ApiResult.Ok)?.value?.incoming?.size
+                ?: _requestBadges.value.incomingFriendRequests,
+        )
+    }
 
     init {
         appScope.launch {

@@ -136,12 +136,19 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
                 is ApiResult.Failure -> _state.update {
                     it.copy(
                         loading = false,
-                        errorMessage = result.message,
+                        errorMessage = result.withAttemptsHint(),
                         errorField = result.field,
                     )
                 }
             }
         }
+    }
+
+    /** "Nickname ou senha incorretos" ganha "Resta(m) N tentativa(s)." quando o backend informa. */
+    private fun ApiResult.Failure.withAttemptsHint(): String {
+        val remaining = attemptsRemaining ?: return message
+        val suffix = if (remaining == 1) "Resta 1 tentativa." else "Restam $remaining tentativas."
+        return "$message $suffix"
     }
 
     private fun clearErrorAnd(transform: (AuthUiState) -> AuthUiState) {

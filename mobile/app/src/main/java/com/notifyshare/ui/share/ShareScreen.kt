@@ -208,7 +208,8 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
 @Composable
 fun ShareScreen(
     vm: ShareViewModel,
-    onOpenRequests: () -> Unit,
+    onOpenIncomingRequests: () -> Unit,
+    onOpenOutgoingRequests: () -> Unit,
     onOpenRules: (grantId: String, nickname: String) -> Unit,
     onOpenNotifyRules: (grantId: String, nickname: String) -> Unit,
     onOpenNotifications: (nickname: String) -> Unit,
@@ -216,18 +217,42 @@ fun ShareScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf(false) }
-    val pendingCount = state.incoming.size + state.outgoing.size
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Compartilhamentos", trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (pendingCount > 0) {
-                    Text(
-                        "$pendingCount pedidos",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                // Recebidos: precisam de uma acao (aceitar/recusar), por isso o
+                // estilo marcante — nao faz sentido deixar isso "parado" ali.
+                if (state.incoming.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
-                            .clickable(onClick = onOpenRequests)
+                            .clickable(onClick = onOpenIncomingRequests)
+                            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Icon(
+                            NotifyIcons.Bell, null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            "${state.incoming.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+                // Enviados: so aguardando resposta de outra pessoa, sem acao
+                // pendente do usuario — estilo discreto, de proposito.
+                if (state.outgoing.isNotEmpty()) {
+                    Text(
+                        "${state.outgoing.size} enviados",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = NotifyShareColors.muted,
+                        modifier = Modifier
+                            .clickable(onClick = onOpenOutgoingRequests)
                             .padding(12.dp),
                     )
                 }
@@ -459,9 +484,14 @@ private fun GrantRow(
 }
 
 // --- Pedidos (caixa de pedidos de grant) -------------------------------------
+//
+// Recebidos e enviados viraram DUAS telas, nao uma so com duas secoes: quem
+// recebeu precisa agir (aceitar/recusar), quem enviou so esta esperando — sao
+// urgencias diferentes, e o estilo de cada tela reflete isso.
 
+/** Pedidos que outras pessoas te mandaram — estilo de notificacao, de proposito. */
 @Composable
-fun RequestsScreen(
+fun IncomingRequestsScreen(
     vm: ShareViewModel,
     onBack: () -> Unit,
     onOpenNotifications: (nickname: String) -> Unit = {},
@@ -469,47 +499,77 @@ fun RequestsScreen(
     val state by vm.state.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
-        ScreenTitle("Pedidos", onBack = onBack)
+        ScreenTitle("Pedidos recebidos", onBack = onBack)
 
         state.notice?.let { msg ->
             NoticeBar(msg, state.noticeActionNick, onOpenNotifications, vm::dismissNotice)
         }
 
         com.notifyshare.ui.common.PullRefresh(state.refreshing, vm::refresh) {
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (state.incoming.isNotEmpty()) {
-                item { SectionLabel("Recebidos · ${state.incoming.size}") }
-                items(state.incoming, key = { it.id }) { g ->
-                    PendingCard(
-                        title = if (g.role == "sharer") "@${g.counterpart} quer receber suas notificações"
-                        else "@${g.counterpart} ofereceu compartilhar com você",
-                        accepting = "accept:${g.id}" in state.busy,
-                        declining = "decline:${g.id}" in state.busy,
-                        onAccept = { vm.accept(g.id) },
-                        onDecline = { vm.decline(g.id) },
-                    )
+            when {
+                // "nenhum pedido" so depois que a primeira carga terminou. Antes
+                // disso, spinner — nunca uma informacao falsa de que nao ha nada.
+                state.incoming.isEmpty() && state.loading -> LoadingBox()
+                state.incoming.isEmpty() -> LazyColumn(Modifier.fillMaxSize()) {
+                    item { EmptyState("Nenhum pedido recebido.") }
                 }
-            }
-            if (state.outgoing.isNotEmpty()) {
-                item { SectionLabel("Enviados · ${state.outgoing.size}") }
-                items(state.outgoing, key = { it.id }) { g ->
-                    PendingCard(
-                        title = if (g.role == "sharer") "Você ofereceu compartilhar com @${g.counterpart}"
-                        else "Você pediu para receber de @${g.counterpart}",
-                        accepting = false,
-                        declining = "decline:${g.id}" in state.busy,
-                        onAccept = null,
-                        onDecline = { vm.decline(g.id) },
-                    )
+                else -> LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(state.incoming, key = { it.id }) { g ->
+                        PendingCard(
+                            title = if (g.role == "sharer") "@${g.counterpart} quer receber suas notificações"
+                            else "@${g.counterpart} ofereceu compartilhar com você",
+                            accepting = "accept:${g.id}" in state.busy,
+                            declining = "decline:${g.id}" in state.busy,
+                            onAccept = { vm.accept(g.id) },
+                            onDecline = { vm.decline(g.id) },
+                            prominent = true,
+                        )
+                    }
                 }
-            }
-            if (state.incoming.isEmpty() && state.outgoing.isEmpty()) {
-                item { EmptyState("Nenhum pedido pendente.") }
             }
         }
+    }
+}
+
+/** Pedidos que voce mandou — so aguardando resposta, sem acao pendente sua. */
+@Composable
+fun OutgoingRequestsScreen(
+    vm: ShareViewModel,
+    onBack: () -> Unit,
+) {
+    val state by vm.state.collectAsStateWithLifecycle()
+
+    Column(Modifier.fillMaxSize()) {
+        ScreenTitle("Pedidos enviados", onBack = onBack)
+
+        com.notifyshare.ui.common.PullRefresh(state.refreshing, vm::refresh) {
+            when {
+                state.outgoing.isEmpty() && state.loading -> LoadingBox()
+                state.outgoing.isEmpty() -> LazyColumn(Modifier.fillMaxSize()) {
+                    item { EmptyState("Nenhum pedido enviado.") }
+                }
+                else -> LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(state.outgoing, key = { it.id }) { g ->
+                        PendingCard(
+                            title = if (g.role == "sharer") "Você ofereceu compartilhar com @${g.counterpart}"
+                            else "Você pediu para receber de @${g.counterpart}",
+                            accepting = false,
+                            declining = "decline:${g.id}" in state.busy,
+                            onAccept = null,
+                            onDecline = { vm.decline(g.id) },
+                            prominent = false,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -521,16 +581,25 @@ private fun PendingCard(
     declining: Boolean,
     onAccept: (() -> Unit)?,
     onDecline: () -> Unit,
+    prominent: Boolean,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
+            .background(
+                if (prominent) MaterialTheme.colorScheme.errorContainer
+                else MaterialTheme.colorScheme.surfaceContainer,
+                RoundedCornerShape(16.dp),
+            )
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(title, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            title,
+            style = if (prominent) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
+            color = if (prominent) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface,
+        )
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
