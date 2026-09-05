@@ -138,7 +138,7 @@ class EventService(
         return toViews(rows)
     }
 
-    /** NotificacoesPessoa: "ela envia" (received) x "eu envio" (sent). */
+    /** NotificacoesPessoa: "ele envia" (received) x "eu envio" (sent). */
     @Transactional(readOnly = true)
     fun conversation(
         meId: UUID,

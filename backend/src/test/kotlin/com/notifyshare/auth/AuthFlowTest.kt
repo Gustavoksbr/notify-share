@@ -17,7 +17,13 @@ import kotlin.test.assertTrue
  * o ponto destes testes e justamente a cadeia de filtros de seguranca e o
  * comportamento transacional, que sao exatamente as partes que um mock apaga.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    // Este teste registra/loga varias vezes seguidas a partir do mesmo IP de
+    // loopback — desliga o rate limit pra nao confundir trafego de teste com
+    // abuso (RateLimitFilterTest cobre o comportamento do limite em si).
+    properties = ["notifyshare.rate-limit.enabled=false"],
+)
 @Import(PostgresTestContainer::class)
 class AuthFlowTest {
 

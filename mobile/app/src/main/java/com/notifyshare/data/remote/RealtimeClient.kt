@@ -65,8 +65,11 @@ class RealtimeClient(
                 retryLater(15_000)
                 return@launch
             }
+            // Token no header, nao na URL: query string pode ficar em log de
+            // proxy, metricas de acesso e historico do navegador/app.
             val request = Request.Builder()
-                .url("${BuildConfig.WS_URL}?token=$token")
+                .url(BuildConfig.WS_URL)
+                .addHeader("Authorization", "Bearer $token")
                 .build()
             socket = client.newWebSocket(request, listener)
         }

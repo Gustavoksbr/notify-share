@@ -7,12 +7,14 @@ plugins {
     alias(libs.plugins.google.services)
 }
 
-// Client ID "Web application" do Google, para o login com Google. Fora do
-// controle de versao: fica em local.properties (GOOGLE_CLIENT_ID=...).
-val googleClientId: String = Properties().apply {
+// local.properties fica fora do controle de versao: e onde entram o
+// GOOGLE_CLIENT_ID e as credenciais da chave de release (RELEASE_*).
+val localProperties: Properties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
-}.getProperty("GOOGLE_CLIENT_ID").orEmpty()
+}
+
+val googleClientId: String = localProperties.getProperty("GOOGLE_CLIENT_ID").orEmpty()
 
 android {
     namespace = "com.notifyshare"
@@ -33,16 +35,28 @@ android {
     }
 
     signingConfigs {
-        // O build de "release" (que aponta para producao) precisa estar assinado
-        // para instalar. Por ora usa a MESMA chave de debug: assim o SHA-1 nao
-        // muda e o login com Google segue funcionando sem mexer no Firebase.
-        // Trocar por uma chave de release propria antes de publicar numa loja.
         create("release") {
-            val debugKeystore = File(System.getProperty("user.home"), ".android/debug.keystore")
-            storeFile = debugKeystore
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            val storeFilePath = localProperties.getProperty("RELEASE_STORE_FILE")
+            if (storeFilePath != null) {
+                // Chave de release propria (ver mobile/local.properties, fora do
+                // controle de versao). O SHA-1 dela precisa estar cadastrado no
+                // Firebase (Configuracoes do projeto > Suas apps > SHA) para o
+                // login com Google funcionar neste build.
+                storeFile = file(storeFilePath)
+                storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+            } else {
+                // Sem RELEASE_STORE_FILE em local.properties (ex.: clone novo,
+                // maquina de outro dev): cai na chave de debug so para o build
+                // instalar e rodar localmente. NUNCA publique um APK/AAB assinado
+                // assim numa loja — gere sua propria chave de release.
+                val debugKeystore = File(System.getProperty("user.home"), ".android/debug.keystore")
+                storeFile = debugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
 
@@ -66,7 +80,8 @@ android {
             resValue("string", "app_name", "Notify Share DEV")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             // Mantem o applicationId "com.notifyshare" (o que esta no
             // google-services.json). Instala junto do dev sem colisao.

@@ -213,7 +213,7 @@ fun PersonNotificationsScreen(
             Tab(
                 selected = state.direction == "received",
                 onClick = { vm.load("received") },
-                text = { Text("Ela envia") },
+                text = { Text("Ele envia") },
             )
             Tab(
                 selected = state.direction == "sent",

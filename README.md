@@ -137,7 +137,7 @@ Em produção, `JWT_SECRET` é obrigatório e precisa de pelo menos 32 bytes.
 | POST | `/events/deliveries/{id}/read` | sim | Marca notificação como lida |
 | GET/POST | `/conversations/{nickname}` , `.../messages` , `.../read` | sim | Timeline (mensagens + auditoria de grant) |
 | GET | `/presence?users=` | sim | Quem está online agora |
-| WS | `/ws?token=` | handshake | Atalho de primeiro plano (evento/mensagem/typing/presença) |
+| WS | `/ws` (header `Authorization: Bearer <token>`) | handshake | Atalho de primeiro plano (evento/mensagem/typing/presença) |
 
 A documentação completa e navegável continua no **Swagger** (`/swagger`).
 

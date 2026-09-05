@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 /** Consentimento LGPD no cadastro, exportacao e exclusao de conta com cascata. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = ["notifyshare.fcm.enabled=false"],
+    properties = ["notifyshare.fcm.enabled=false", "notifyshare.rate-limit.enabled=false"],
 )
 @Import(PostgresTestContainer::class)
 class AccountFlowTest {

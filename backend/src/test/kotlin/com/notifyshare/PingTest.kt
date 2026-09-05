@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = ["notifyshare.fcm.enabled=false"],
+    properties = ["notifyshare.fcm.enabled=false", "notifyshare.rate-limit.enabled=false"],
 )
 @Import(PostgresTestContainer::class)
 class PingTest {

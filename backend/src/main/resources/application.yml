@@ -39,6 +39,11 @@ server:
   error:
     include-message: never
     include-stacktrace: never
+  # Atras do proxy da Render: sem isto, toda requisicao chega com o IP
+  # interno do proxy, e o rate limit por IP (RateLimitFilter) vira inutil —
+  # todo mundo cai no mesmo balde. "framework" usa o ForwardedHeaderFilter do
+  # Spring, que reescreve remoteAddr a partir de X-Forwarded-For.
+  forward-headers-strategy: framework
 
 notifyshare:
   jwt:

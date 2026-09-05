@@ -1,6 +1,7 @@
 package com.notifyshare.shared.config
 
 import com.notifyshare.auth.adapter.web.JwtAuthenticationFilter
+import com.notifyshare.shared.web.RateLimitFilter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpStatus
@@ -13,7 +14,10 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 
 @Configuration
-class SecurityConfig(private val jwtFilter: JwtAuthenticationFilter) {
+class SecurityConfig(
+    private val jwtFilter: JwtAuthenticationFilter,
+    private val rateLimitFilter: RateLimitFilter,
+) {
 
     /**
      * Delegating encoder: grava o hash com o prefixo do algoritmo ({bcrypt}...),
@@ -42,8 +46,9 @@ class SecurityConfig(private val jwtFilter: JwtAuthenticationFilter) {
                 )
                     .permitAll()
                     .requestMatchers("/actuator/health", "/ping").permitAll()
-                    // O handshake do WebSocket se autentica sozinho pelo ?token=
-                    // (WsHandshakeInterceptor). Aqui so liberamos a rota do filtro HTTP.
+                    // O handshake do WebSocket se autentica sozinho pelo header
+                    // Authorization (WsHandshakeInterceptor). Aqui so liberamos a
+                    // rota do filtro HTTP.
                     .requestMatchers("/ws").permitAll()
                     // Swagger. Em producao isso sai do ar por SWAGGER_ENABLED=false,
                     // e ai estas rotas simplesmente nao existem.
@@ -63,6 +68,9 @@ class SecurityConfig(private val jwtFilter: JwtAuthenticationFilter) {
                 }
             }
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter::class.java)
+            // Depois do jwtFilter: em /users/search ja da pra saber o usuario
+            // autenticado e limitar por ele em vez de por IP.
+            .addFilterAfter(rateLimitFilter, JwtAuthenticationFilter::class.java)
 
         return http.build()
     }
