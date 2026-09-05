@@ -42,6 +42,6 @@ ENTRYPOINT ["java", \
   "-XX:MaxRAMPercentage=75.0", \
   "-XX:+UseSerialGC", \
   "-XX:MaxMetaspaceSize=128m", \
-  "-XX:+TieredStopAtLevel=1", \
+  "-XX:TieredStopAtLevel=1", \
   "-Xss512k", \
   "-jar", "app.jar"]

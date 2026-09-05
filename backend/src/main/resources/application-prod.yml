@@ -16,14 +16,29 @@ spring:
   datasource:
     url: ${DATABASE_URL}
     hikari:
-      # Trafego baixo + pooler free do Supabase com teto de conexoes: 3 sobra.
-      # Menos conexoes = menos memoria e menos risco de esgotar o pooler.
-      maximum-pool-size: ${DB_POOL_SIZE:3}
+      # O pool e o limite duro de concorrencia de tudo que toca o banco.
+      # 5 fica bem abaixo do teto do pooler free do Supabase e a economia de
+      # memoria de cortar pra 3 era irrisoria — nao compensava o paralelismo.
+      maximum-pool-size: ${DB_POOL_SIZE:5}
       # Menor que o server_idle_timeout do pooler para nao usar conexao morta.
       max-lifetime: 1200000
 
   jmx:
     enabled: false
+
+  jpa:
+    hibernate:
+      # dev/test usam "validate" (pega drift de mapping). Em producao o Flyway
+      # ja garante o schema, e o "validate" faz um round-trip de metadata por
+      # entidade contra o Supabase no boot — puro custo de startup. "none" pula.
+      ddl-auto: none
+
+  main:
+    # Cria os beans sob demanda em vez de todos no boot. Corta bastante do
+    # tempo de partida (crucial no CPU limitado da Render free). Custo: a
+    # primeira chamada a cada endpoint e um pouco mais lenta, e erro de config
+    # de bean aparece em runtime, nao no boot. Aceitavel para o beta.
+    lazy-initialization: true
 
   # Se um dia trocar para o transaction pooler (porta 6543), descomente:
   #   flyway.postgresql.transactional-lock: false   (o lock de sessao nao funciona la)
@@ -51,9 +66,3 @@ server:
     enabled: true
     mime-types: application/json
     min-response-size: 1024
-  tomcat:
-    threads:
-      # Default e 200 threads — cada uma reserva stack. Esse trafego nao passa
-      # perto disso; 20 e folgado e economiza memoria.
-      max: 20
-      min-spare: 4

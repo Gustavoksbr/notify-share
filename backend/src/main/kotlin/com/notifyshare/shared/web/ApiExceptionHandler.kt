@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.servlet.resource.NoResourceFoundException
 
 @RestControllerAdvice
 class ApiExceptionHandler {
@@ -16,6 +17,12 @@ class ApiExceptionHandler {
     fun handleApi(e: ApiException): ResponseEntity<ApiErrorResponse> =
         ResponseEntity.status(e.status)
             .body(ApiErrorResponse(e.code, e.message, e.field, e.attemptsRemaining, e.retryAfterSeconds))
+
+    /** Rota inexistente (URL errada). Sem isto cai no catch-all e vira 500. */
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNotFound(e: NoResourceFoundException): ResponseEntity<ApiErrorResponse> =
+        ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(ApiErrorResponse("not_found", "Rota nao encontrada"))
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleBeanValidation(e: MethodArgumentNotValidException): ResponseEntity<ApiErrorResponse> {

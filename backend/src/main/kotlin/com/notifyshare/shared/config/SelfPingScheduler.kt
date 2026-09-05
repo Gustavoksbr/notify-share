@@ -2,6 +2,7 @@ package com.notifyshare.shared.config
 
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.annotation.Lazy
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.net.URI
@@ -18,7 +19,10 @@ import java.time.Duration
  * Desligado quando `API_PRODUCTION_URL` esta vazio (dev/local): nao ha nada util
  * para pingar.
  */
+// eager mesmo com spring.main.lazy-initialization=true: um @Scheduled em bean
+// lazy nunca registra o agendamento (e o self-ping segura o spin-down).
 @Component
+@Lazy(false)
 class SelfPingScheduler(
     @Value("\${notifyshare.self-ping.url:}") productionUrl: String,
 ) {

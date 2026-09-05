@@ -2,6 +2,7 @@ package com.notifyshare.events.application
 
 import com.notifyshare.events.adapter.persistence.EventRepository
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Lazy
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
@@ -10,8 +11,11 @@ import java.time.Instant
 /**
  * Apaga o historico velho. As entregas caem junto por ON DELETE CASCADE.
  * Roda de madrugada; a janela exata nao importa.
+ *
+ * @Lazy(false): um @Scheduled em bean lazy nunca registra o agendamento.
  */
 @Component
+@Lazy(false)
 class EventRetentionJob(
     private val events: EventRepository,
     private val properties: EventProperties,
