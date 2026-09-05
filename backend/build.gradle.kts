@@ -77,6 +77,11 @@ allOpen {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // O default do Gradle mira ~1/4 da RAM da maquina e o G1 reserva um espaco
+    // virtual grande no boot; com Docker Desktop + Testcontainers junto isso
+    // estoura em maquina apertada. SerialGC + heap modesto resolve.
+    maxHeapSize = "512m"
+    jvmArgs("-XX:+UseSerialGC")
     // Sem Docker: se SPRING_DATASOURCE_URL estiver no ambiente, os testes usam
     // esse Postgres em vez de subir um container.
     if (!System.getenv("SPRING_DATASOURCE_URL").isNullOrBlank()) {

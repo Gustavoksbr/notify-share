@@ -30,13 +30,15 @@ class PresenceService(
 
         val found = users.findAllByNicknameIn(normalized)
         val onlineIds = realtime.onlineAmong(found.map { it.id })
+        val offlineIds = found.map { it.id }.filterNot { it in onlineIds }
+        val lastSeenByUser = devices.lastSeenByUser(offlineIds)
 
         return found.map { user ->
             val online = user.id in onlineIds
             Presence(
                 nickname = user.nickname,
                 online = online,
-                lastSeen = if (online) null else devices.lastSeen(user.id),
+                lastSeen = if (online) null else lastSeenByUser[user.id],
             )
         }
     }

@@ -33,4 +33,25 @@ class PushNotifier(
     }
 
     fun notifyUser(userId: UUID, message: PushMessage) = notifyUsers(listOf(userId), message)
+
+    /**
+     * Avisa varios usuarios, cada um com a SUA mensagem (payloads diferentes —
+     * ex.: um fan-out de evento onde cada entrega tem um deliveryId proprio).
+     * Faz UMA consulta de tokens para todos, em vez de uma por usuario.
+     */
+    fun notifyEach(messagesByUser: Map<UUID, PushMessage>) {
+        if (messagesByUser.isEmpty()) return
+        messagesByUser.forEach { (userId, msg) -> realtime.push(userId, msg.type, msg.data) }
+
+        val tokensByUser = devices.tokensByUser(messagesByUser.keys)
+        val dead = mutableSetOf<String>()
+        messagesByUser.forEach { (userId, msg) ->
+            val tokens = tokensByUser[userId].orEmpty()
+            if (tokens.isEmpty()) return@forEach
+            push.send(tokens, msg).forEach { (token, outcome) ->
+                if (outcome is PushOutcome.TokenRejected) dead += token
+            }
+        }
+        if (dead.isNotEmpty()) devices.dropTokens(dead)
+    }
 }

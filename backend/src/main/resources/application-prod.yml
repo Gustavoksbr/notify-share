@@ -16,10 +16,14 @@ spring:
   datasource:
     url: ${DATABASE_URL}
     hikari:
-      # Free tier tem teto baixo de conexoes. Deixe folga para o pooler.
-      maximum-pool-size: ${DB_POOL_SIZE:5}
+      # Trafego baixo + pooler free do Supabase com teto de conexoes: 3 sobra.
+      # Menos conexoes = menos memoria e menos risco de esgotar o pooler.
+      maximum-pool-size: ${DB_POOL_SIZE:3}
       # Menor que o server_idle_timeout do pooler para nao usar conexao morta.
       max-lifetime: 1200000
+
+  jmx:
+    enabled: false
 
   # Se um dia trocar para o transaction pooler (porta 6543), descomente:
   #   flyway.postgresql.transactional-lock: false   (o lock de sessao nao funciona la)
@@ -41,3 +45,15 @@ logging:
 # nela. Fora da Render, PORT nao existe e cai no 8080.
 server:
   port: ${PORT:8080}
+  # gzip nas respostas JSON acima de ~1KB: menos bytes na rede movel, resposta
+  # percebida mais rapida. Custo de CPU e irrelevante nesse volume.
+  compression:
+    enabled: true
+    mime-types: application/json
+    min-response-size: 1024
+  tomcat:
+    threads:
+      # Default e 200 threads — cada uma reserva stack. Esse trafego nao passa
+      # perto disso; 20 e folgado e economiza memoria.
+      max: 20
+      min-spare: 4

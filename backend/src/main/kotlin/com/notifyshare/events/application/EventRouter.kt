@@ -78,13 +78,13 @@ class EventRouter(
             .map { it.grantId }
             .toSet()
 
-        var pushed = 0
-        toSave.forEach {
-            if (it.grantId in mutedGrants) return@forEach
-            push(event, it, originNickname)
-            pushed++
-        }
-        log.debug("evento {} entregue a {} ({} push)", event.id, toSave.size, pushed)
+        // uma consulta de tokens para todos os destinatarios, nao uma por entrega
+        val toPush = toSave
+            .filterNot { it.grantId in mutedGrants }
+            .associate { it.recipientId to pushMessage(event, it, originNickname) }
+        pushNotifier.notifyEach(toPush)
+
+        log.debug("evento {} entregue a {} ({} push)", event.id, toSave.size, toPush.size)
         return toSave.size
     }
 
@@ -105,7 +105,7 @@ class EventRouter(
         if (toSave.isEmpty()) return 0
         deliveries.saveAll(toSave)
         val originNickname = users.findById(event.originUserId).map { it.nickname }.orElse("")
-        toSave.forEach { push(event, it, originNickname) }
+        pushNotifier.notifyEach(toSave.associate { it.recipientId to pushMessage(event, it, originNickname) })
         log.debug("teste {} entregue a {}", event.id, toSave.size)
         return toSave.size
     }
@@ -150,7 +150,7 @@ class EventRouter(
         return Regex("(?<!\\d)\\d{4,8}(?!\\d)").containsMatchIn(text)
     }
 
-    private fun push(event: Event, delivery: EventDelivery, originNickname: String) {
+    private fun pushMessage(event: Event, delivery: EventDelivery, originNickname: String): PushMessage {
         val data = buildMap {
             put("eventId", event.id.toString())
             put("deliveryId", delivery.id.toString())
@@ -166,6 +166,6 @@ class EventRouter(
                 event.content?.take(3500)?.let { put("content", it) }
             }
         }
-        pushNotifier.notifyUser(delivery.recipientId, PushMessage(type = "event", data = data))
+        return PushMessage(type = "event", data = data)
     }
 }

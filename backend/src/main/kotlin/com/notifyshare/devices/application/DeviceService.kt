@@ -48,6 +48,15 @@ class DeviceService(private val devices: DeviceRepository) {
     fun lastSeen(userId: UUID): Instant? =
         devices.findAllByUserId(userId).maxOfOrNull { it.lastSeenAt }
 
+    /** Ultimo "visto" de varios usuarios numa consulta so — evita N+1 no /presence. */
+    @Transactional(readOnly = true)
+    fun lastSeenByUser(userIds: Collection<UUID>): Map<UUID, Instant> {
+        if (userIds.isEmpty()) return emptyMap()
+        return devices.findAllByUserIdIn(userIds)
+            .groupBy { it.userId }
+            .mapValues { (_, list) -> list.maxOf { it.lastSeenAt } }
+    }
+
     /** Chamado pelo envio de push quando o FCM diz que um token morreu. */
     @Transactional
     fun dropTokens(tokens: Collection<String>) {
