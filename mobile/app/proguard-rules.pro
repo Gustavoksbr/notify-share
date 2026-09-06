@@ -26,6 +26,20 @@
 -keep class * extends androidx.room.RoomDatabase
 -keep class **_Impl { <init>(); }
 
+# Firebase: os SDKs (Crashlytics, Messaging, Analytics) se registram por
+# "ComponentRegistrar" — o AndroidManifest lista os nomes das classes e o
+# Firebase as instancia por reflexao, com o construtor sem argumentos. O R8
+# em full mode remove esse construtor achando que ninguem chama, e o app
+# crasha JA NO BOOT do release: "NoSuchMethodException:
+# CrashlyticsRegistrar.<init>" / "FirebaseCrashlytics component is not
+# present". Confirmado em dispositivo fisico.
+-keepnames class * implements com.google.firebase.components.ComponentRegistrar
+-keepclassmembers class * implements com.google.firebase.components.ComponentRegistrar {
+    <init>();
+}
+-keep class com.google.firebase.crashlytics.** { *; }
+-dontwarn com.google.firebase.crashlytics.**
+
 # Retrofit/OkHttp: sem isso o proxy dinamico da interface da API perde a
 # assinatura generica dos "suspend fun" e o Retrofit nao consegue montar a
 # call. Tambem cobre os avisos de classes opcionais que a OkHttp referencia

@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
 }
 
 // local.properties fica fora do controle de versao: e onde entram o
@@ -134,6 +135,9 @@ dependencies {
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.crashlytics)
+    // Analytics: da ao Crashlytics a trilha de eventos antes do crash (breadcrumbs).
+    implementation(libs.firebase.analytics)
 
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)

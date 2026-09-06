@@ -7,6 +7,9 @@
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# Kotlin: cache de compilacao incremental (plugin Kotlin 2.1+)
+.kotlin/
+
 # Saida de compilacao do Eclipse/JDT
 bin/
 

@@ -101,6 +101,14 @@ class AppContainer(context: Context) {
         appScope.launch {
             fcmStatus.collect { fcmRegistered = it == "ok" }
         }
+        // Marca o crash report com quem estava logado — num beta, saber qual
+        // amigo bateu no bug vale muito. Limpa ao sair (setUserId vazio).
+        appScope.launch {
+            tokenStore.activeAccount.collect { acc ->
+                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
+                    .setUserId(acc?.nickname ?: "")
+            }
+        }
     }
 }
 
