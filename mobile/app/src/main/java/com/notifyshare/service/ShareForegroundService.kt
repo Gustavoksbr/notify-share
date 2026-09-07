@@ -75,7 +75,7 @@ class ShareForegroundService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, NotificationChannels.SERVICE)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Notify Share")
             .setContentText(text)
             .setOngoing(true)

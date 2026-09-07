@@ -1,5 +1,7 @@
 # Notify Share
 
+<img src="docs/icon.png" alt="Notify Share" width="120" align="right" />
+
 https://github.com/Gustavoksbr/notify-share
 
 Compartilhe as notificações do seu Android com pessoas que você escolher — e só

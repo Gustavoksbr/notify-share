@@ -148,7 +148,7 @@ private fun BrandMark() {
     ) {
         androidx.compose.foundation.Image(
             painter = androidx.compose.ui.res.painterResource(
-                id = com.notifyshare.R.drawable.ic_launcher_foreground
+                id = com.notifyshare.R.drawable.ic_brand
             ),
             contentDescription = null,
             modifier = Modifier.size(96.dp),

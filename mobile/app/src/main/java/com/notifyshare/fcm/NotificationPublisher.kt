@@ -88,7 +88,7 @@ class NotificationPublisher(private val context: Context) {
         )
 
         val notification = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

@@ -46,6 +46,9 @@ class SecurityConfig(
                 )
                     .permitAll()
                     .requestMatchers("/actuator/health", "/ping").permitAll()
+                    // Estaticos publicos: sem isto o navegador leva 401 ao pedir
+                    // /favicon.ico e mostra o icone generico na aba.
+                    .requestMatchers("/", "/favicon.ico", "/favicon-*.png", "/robots.txt").permitAll()
                     // O handshake do WebSocket se autentica sozinho pelo header
                     // Authorization (WsHandshakeInterceptor). Aqui so liberamos a
                     // rota do filtro HTTP.
