@@ -181,6 +181,21 @@ class GrantService(
         return PendingGrants(viewAll(incoming, userId), viewAll(outgoing, userId))
     }
 
+    /**
+     * Pedidos de compartilhamento pendentes que [counterpartId] mandou para
+     * [userId] — usado logo apos aceitar uma amizade com intencao de compartilhar,
+     * para o app ja mostrar as opcoes sem uma segunda chamada.
+     */
+    @Transactional(readOnly = true)
+    fun incomingPendingFrom(userId: UUID, counterpartId: UUID): List<GrantView> =
+        viewAll(
+            grants.findAllBetween(userId, counterpartId).filter { g ->
+                (g.status == Grant.OFFERED && g.recipientId == userId) ||
+                    (g.status == Grant.REQUESTED && g.sharerId == userId)
+            },
+            userId,
+        )
+
     /** Grants ativos em que este usuario e a origem — usado pelo roteamento de eventos. */
     @Transactional(readOnly = true)
     fun activeOutbound(sharerId: UUID): List<Grant> =

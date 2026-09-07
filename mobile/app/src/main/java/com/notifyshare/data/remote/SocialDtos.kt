@@ -16,7 +16,19 @@ data class SearchResultDto(
 data class FriendDto(val nickname: String, val since: String, val online: Boolean = false)
 
 @Serializable
-data class FriendRequestDto(val id: String, val nickname: String, val createdAt: String)
+data class FriendRequestDto(
+    val id: String,
+    val nickname: String,
+    val createdAt: String,
+    /** A pessoa marcou "quero compartilhar as minhas" ao mandar o pedido. */
+    val alsoOfferShare: Boolean = false,
+    /** A pessoa marcou "quero receber as suas" ao mandar o pedido. */
+    val alsoRequestShare: Boolean = false,
+)
+
+/** Resposta do POST /friends/requests/{id}/accept — grants criados na hora. */
+@Serializable
+data class AcceptFriendResultDto(val shareGrants: List<GrantDto> = emptyList())
 
 @Serializable
 data class PendingRequestsDto(

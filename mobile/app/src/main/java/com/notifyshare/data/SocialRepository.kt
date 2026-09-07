@@ -57,7 +57,17 @@ class SocialRepository(
             api.sendFriendRequest(FriendRequestBody(nickname, alsoOfferShare, alsoRequestShare))
         }
 
-    suspend fun acceptFriend(id: String): ApiResult<Unit> = apiCall(json) { api.acceptFriend(id) }
+    suspend fun acceptFriend(id: String): ApiResult<com.notifyshare.data.remote.AcceptFriendResultDto> {
+        val r = apiCall(json) { api.acceptFriend(id) }
+        return when (r) {
+            // backend antigo responde 204 sem corpo: apiCall devolve Ok(Unit) — trata como vazio
+            is ApiResult.Ok -> ApiResult.Ok(
+                (r.value as? com.notifyshare.data.remote.AcceptFriendResultDto)
+                    ?: com.notifyshare.data.remote.AcceptFriendResultDto(),
+            )
+            is ApiResult.Failure -> r
+        }
+    }
 
     suspend fun declineFriend(id: String): ApiResult<Unit> = apiCall(json) { api.declineFriend(id) }
 

@@ -83,7 +83,7 @@ class SocialFlowTest {
     private fun befriend(aToken: String, bToken: String, bNick: String) {
         post("/friends/requests", aToken, """{"nickname":"$bNick"}""")
         val requestId = field(get("/friends/requests", bToken).body, "id")
-        assertEquals(204, post("/friends/requests/$requestId/accept", bToken).status)
+        assertEquals(200, post("/friends/requests/$requestId/accept", bToken).status)
     }
 
     // --- amizade -------------------------------------------------------
@@ -113,7 +113,7 @@ class SocialFlowTest {
         assertFalse(get("/grants/pending", a).body.contains("c3req_b"), get("/grants/pending", a).body)
 
         val reqId = field(get("/friends/requests", b).body, "id")
-        assertEquals(204, post("/friends/requests/$reqId/accept", b).status)
+        assertEquals(200, post("/friends/requests/$reqId/accept", b).status)
 
         // agora A tem um pedido de compartilhamento pendente com B (A iniciou)
         val pendingA = get("/grants/pending", a).body
@@ -167,7 +167,7 @@ class SocialFlowTest {
             ).status,
         )
         val reqId = field(get("/friends/requests", b).body, "id")
-        assertEquals(204, post("/friends/requests/$reqId/accept", b).status)
+        assertEquals(200, post("/friends/requests/$reqId/accept", b).status)
 
         // A oferece (sharer) e pede (recipient): os dois grants pendentes
         val pendingA = get("/grants/pending", a).body

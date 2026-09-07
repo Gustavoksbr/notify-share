@@ -25,7 +25,15 @@ data class SearchResult(
 
 data class FriendView(val nickname: String, val since: Instant, val online: Boolean)
 
-data class FriendRequestView(val id: UUID, val nickname: String, val createdAt: Instant)
+data class FriendRequestView(
+    val id: UUID,
+    val nickname: String,
+    val createdAt: Instant,
+    /** A pessoa marcou "quero compartilhar as minhas" ao mandar o pedido. */
+    val alsoOfferShare: Boolean = false,
+    /** A pessoa marcou "quero receber as suas" ao mandar o pedido. */
+    val alsoRequestShare: Boolean = false,
+)
 
 data class PendingRequests(
     val incoming: List<FriendRequestView>,
@@ -105,10 +113,14 @@ class FriendService(
         ).associate { it.id to it.nickname }
         return PendingRequests(
             incoming = incoming.mapNotNull { f ->
-                names[f.requesterId]?.let { FriendRequestView(f.id, it, f.createdAt) }
+                names[f.requesterId]?.let {
+                    FriendRequestView(f.id, it, f.createdAt, f.alsoOfferShare, f.alsoRequestShare)
+                }
             }.sortedByDescending { it.createdAt },
             outgoing = outgoing.mapNotNull { f ->
-                names[f.addresseeId]?.let { FriendRequestView(f.id, it, f.createdAt) }
+                names[f.addresseeId]?.let {
+                    FriendRequestView(f.id, it, f.createdAt, f.alsoOfferShare, f.alsoRequestShare)
+                }
             }.sortedByDescending { it.createdAt },
         )
     }
@@ -175,28 +187,35 @@ class FriendService(
         eventPublisher.publishEvent(FriendLinkClearedEvent(f.requesterId, f.addresseeId))
     }
 
+    /**
+     * Responde um pedido recebido. Ao aceitar, devolve o id de quem pediu — o
+     * controller usa isso para ja retornar os pedidos de compartilhamento que o
+     * [GrantAutoCreator] acabou de criar (AFTER_COMMIT, sincrono), poupando o
+     * app de uma segunda chamada so pra descobrir os grants.
+     */
     @Transactional
-    fun respond(userId: UUID, friendshipId: UUID, accept: Boolean) {
+    fun respond(userId: UUID, friendshipId: UUID, accept: Boolean): UUID? {
         val f = friendships.findById(friendshipId)
             .orElseThrow { NotFoundException("request_not_found", "Pedido nao encontrado") }
         if (f.addresseeId != userId || f.status != Friendship.PENDING) {
             throw ForbiddenException("not_your_request", "Esse pedido nao e seu para responder")
         }
-        if (accept) {
-            f.status = Friendship.ACCEPTED
-            f.respondedAt = Instant.now()
-            friendships.save(f)
-            val addresseeNickname = users.findById(userId).map { it.nickname }.orElse(null)
-            if (addresseeNickname != null) {
-                pushNotifier.notifyUser(
-                    f.requesterId,
-                    PushMessage("friend_accepted", mapOf("actor" to addresseeNickname)),
-                )
-                publishAccepted(f.requesterId, addresseeNickname, f.alsoOfferShare, f.alsoRequestShare)
-            }
-        } else {
+        if (!accept) {
             friendships.delete(f)
+            return null
         }
+        f.status = Friendship.ACCEPTED
+        f.respondedAt = Instant.now()
+        friendships.save(f)
+        val addresseeNickname = users.findById(userId).map { it.nickname }.orElse(null)
+        if (addresseeNickname != null) {
+            pushNotifier.notifyUser(
+                f.requesterId,
+                PushMessage("friend_accepted", mapOf("actor" to addresseeNickname)),
+            )
+            publishAccepted(f.requesterId, addresseeNickname, f.alsoOfferShare, f.alsoRequestShare)
+        }
+        return f.requesterId
     }
 
     private fun publishAccepted(

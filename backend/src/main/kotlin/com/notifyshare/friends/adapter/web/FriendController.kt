@@ -4,6 +4,8 @@ import com.notifyshare.friends.application.FriendService
 import com.notifyshare.friends.application.FriendView
 import com.notifyshare.friends.application.PendingRequests
 import com.notifyshare.friends.application.SearchResult
+import com.notifyshare.grants.application.GrantService
+import com.notifyshare.grants.application.GrantView
 import com.notifyshare.shared.config.OpenApiConfig.Companion.BEARER_SCHEME
 import com.notifyshare.shared.web.AuthenticatedUser
 import io.swagger.v3.oas.annotations.Operation
@@ -32,10 +34,18 @@ data class NicknameRequest(
     val alsoRequestShare: Boolean = false,
 )
 
+data class AcceptFriendResult(
+    @field:Schema(description = "Pedidos de compartilhamento que essa pessoa mandou junto do pedido de amizade e que acabaram de ser criados. Vazio se ela nao pediu nada.")
+    val shareGrants: List<GrantView> = emptyList(),
+)
+
 @RestController
 @SecurityRequirement(name = BEARER_SCHEME)
 @Tag(name = "Amigos", description = "Busca por nickname e pedidos de amizade")
-class FriendController(private val friends: FriendService) {
+class FriendController(
+    private val friends: FriendService,
+    private val grants: GrantService,
+) {
 
     @GetMapping("/users/search")
     @Operation(
@@ -68,16 +78,23 @@ class FriendController(private val friends: FriendService) {
     ): SearchResult = friends.request(me.id, body.nickname, body.alsoOfferShare, body.alsoRequestShare)
 
     @PostMapping("/friends/requests/{id}/accept")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Aceita um pedido recebido")
-    fun accept(@AuthenticationPrincipal me: AuthenticatedUser, @PathVariable id: UUID) =
-        friends.respond(me.id, id, accept = true)
+    @Operation(
+        summary = "Aceita um pedido recebido",
+        description = "Devolve os pedidos de compartilhamento criados na hora, se a pessoa pediu algo junto.",
+    )
+    fun accept(@AuthenticationPrincipal me: AuthenticatedUser, @PathVariable id: UUID): AcceptFriendResult {
+        val requesterId = friends.respond(me.id, id, accept = true)
+        return AcceptFriendResult(
+            requesterId?.let { grants.incomingPendingFrom(me.id, it) }.orEmpty(),
+        )
+    }
 
     @PostMapping("/friends/requests/{id}/decline")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Recusa um pedido recebido")
-    fun decline(@AuthenticationPrincipal me: AuthenticatedUser, @PathVariable id: UUID) =
+    fun decline(@AuthenticationPrincipal me: AuthenticatedUser, @PathVariable id: UUID) {
         friends.respond(me.id, id, accept = false)
+    }
 
     @PostMapping("/friends/requests/{id}/cancel")
     @ResponseStatus(HttpStatus.NO_CONTENT)

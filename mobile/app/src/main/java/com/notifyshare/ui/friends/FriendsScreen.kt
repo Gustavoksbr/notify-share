@@ -52,6 +52,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -79,7 +81,16 @@ data class FriendsUiState(
     val pendingShareFrom: PendingShareOffer? = null,
 )
 
-data class PendingShareOffer(val nickname: String, val grants: List<GrantDto>)
+/**
+ * Modal pos-amizade. Os [items] podem aparecer ANTES do `accept` responder
+ * (a intencao ja vem no proprio pedido de amizade); o `grantId` de cada um
+ * chega junto com a resposta do `accept`, ~1s depois, e ate la o botao
+ * daquele item fica "carregando".
+ */
+data class PendingShareOffer(val nickname: String, val items: List<ShareOfferItem>)
+
+/** role: "sharer" = a pessoa quer receber as minhas · "recipient" = quer me enviar as dela. */
+data class ShareOfferItem(val role: String, val grantId: String? = null)
 
 class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
 
@@ -167,39 +178,68 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
     }
 
     /**
-     * Aceitar amizade: tira o pedido da lista na hora e, se o backend acabou de
-     * criar pedidos de compartilhamento (a pessoa marcou "quero receber/enviar"
-     * junto do pedido), abre a modal pra responder na hora.
+     * Aceitar amizade: tira o pedido da lista na hora. Se o pedido veio com a
+     * intencao de compartilhar (`alsoOfferShare`/`alsoRequestShare`), a modal
+     * abre JA — os botoes so esperam o id do grant, que vem na resposta do
+     * `accept` (~1s). Sem essa intencao no pedido, cai no fallback: busca os
+     * pendentes depois de aceitar.
      */
     fun accept(id: String) = viewModelScope.launch {
         val before = _state.value
         val req = before.incoming.firstOrNull { it.id == id } ?: return@launch
         _state.update { it.copy(busy = it.busy + "accept:$id", incoming = it.incoming.filterNot { r -> r.id == id }) }
-        val r = repo.acceptFriend(id)
-        _state.update { it.copy(busy = it.busy - "accept:$id") }
-        when (r) {
-            is ApiResult.Failure -> _state.update { it.copy(incoming = before.incoming, error = r.message) }
+
+        val earlyRoles = buildList {
+            if (req.alsoRequestShare) add("sharer")   // quer receber as minhas -> eu sou sharer
+            if (req.alsoOfferShare) add("recipient")  // quer me enviar as dele  -> eu sou recipient
+        }
+        if (earlyRoles.isNotEmpty()) {
+            _state.update { it.copy(pendingShareFrom = PendingShareOffer(req.nickname, earlyRoles.map { r -> ShareOfferItem(r) })) }
+        }
+
+        when (val r = repo.acceptFriend(id)) {
+            is ApiResult.Failure -> _state.update {
+                it.copy(busy = it.busy - "accept:$id", incoming = before.incoming, error = r.message, pendingShareFrom = null)
+            }
             is ApiResult.Ok -> {
+                _state.update { it.copy(busy = it.busy - "accept:$id") }
                 signalSocial()
-                val offers = (repo.pendingGrants() as? ApiResult.Ok)?.value?.incoming
-                    ?.filter { it.counterpart == req.nickname }
-                    .orEmpty()
+                var grants = r.value.shareGrants
+                if (grants.isEmpty() && (earlyRoles.isNotEmpty() || _state.value.pendingShareFrom != null)) {
+                    // backend antigo (sem corpo) ou grant que ja existia: busca a lista
+                    grants = (repo.pendingGrants() as? ApiResult.Ok)?.value?.incoming
+                        ?.filter { it.counterpart == req.nickname }.orEmpty()
+                }
+                val items = grants.map { ShareOfferItem(it.role, it.id) }
                 _state.update {
-                    it.copy(pendingShareFrom = offers.takeIf { o -> o.isNotEmpty() }?.let { o -> PendingShareOffer(req.nickname, o) })
+                    it.copy(pendingShareFrom = items.takeIf { i -> i.isNotEmpty() }?.let { i -> PendingShareOffer(req.nickname, i) })
                 }
                 load(silent = true)
             }
         }
     }
 
-    /** Responde um pedido de compartilhamento da modal pos-amizade. */
-    fun respondShareOffer(grantId: String, accept: Boolean) = viewModelScope.launch {
-        _state.update { st ->
-            val cur = st.pendingShareFrom ?: return@update st
-            val left = cur.grants.filterNot { it.id == grantId }
-            st.copy(pendingShareFrom = if (left.isEmpty()) null else cur.copy(grants = left))
+    /**
+     * Responde um item da modal pos-amizade. Se o id do grant ainda nao chegou
+     * (accept voando), suspende ate chegar — o botao fica "carregando".
+     */
+    fun respondShareOffer(role: String, accept: Boolean) = viewModelScope.launch {
+        _state.update { it.copy(busy = it.busy + "share:$role") }
+        val grantId = state
+            .mapNotNull { it.pendingShareFrom?.items?.firstOrNull { i -> i.role == role }?.grantId }
+            .first()
+        val r = if (accept) repo.acceptGrant(grantId) else repo.declineGrant(grantId)
+        if (r is ApiResult.Failure) {
+            _state.update { it.copy(busy = it.busy - "share:$role", error = r.message) }
+            return@launch
         }
-        if (accept) repo.acceptGrant(grantId) else repo.declineGrant(grantId)
+        _state.update { st ->
+            val left = st.pendingShareFrom?.items?.filterNot { it.role == role }.orEmpty()
+            st.copy(
+                busy = st.busy - "share:$role",
+                pendingShareFrom = if (left.isEmpty()) null else st.pendingShareFrom?.copy(items = left),
+            )
+        }
         signalSocial()
         load(silent = true)
     }
@@ -430,6 +470,7 @@ fun FriendsScreen(
     state.pendingShareFrom?.let { offer ->
         ShareOfferDialog(
             offer = offer,
+            busy = state.busy,
             onRespond = vm::respondShareOffer,
             onLater = vm::dismissShareModal,
         )
@@ -444,7 +485,8 @@ fun FriendsScreen(
 @Composable
 private fun ShareOfferDialog(
     offer: PendingShareOffer,
-    onRespond: (grantId: String, accept: Boolean) -> Unit,
+    busy: Set<String>,
+    onRespond: (role: String, accept: Boolean) -> Unit,
     onLater: () -> Unit,
 ) {
     androidx.compose.material3.AlertDialog(
@@ -457,16 +499,17 @@ private fun ShareOfferDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = NotifyShareColors.muted,
                 )
-                offer.grants.forEach { g ->
+                offer.items.forEach { item ->
+                    val loading = "share:${item.role}" in busy
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            if (g.role == "sharer") "Quer receber as suas notificações"
+                            if (item.role == "sharer") "Quer receber as suas notificações"
                             else "Quer te enviar as notificações dele",
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            InlineActionButton("Recusar", { onRespond(g.id, false) })
-                            PillButton("Aceitar", { onRespond(g.id, true) })
+                            InlineActionButton("Recusar", { onRespond(item.role, false) }, loading = loading)
+                            PillButton("Aceitar", { onRespond(item.role, true) }, loading = loading)
                         }
                     }
                 }

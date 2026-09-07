@@ -66,7 +66,7 @@ interface NotifyShareApi {
     suspend fun sendFriendRequest(@Body body: FriendRequestBody): Response<SearchResultDto>
 
     @POST("friends/requests/{id}/accept")
-    suspend fun acceptFriend(@Path("id") id: String): Response<Unit>
+    suspend fun acceptFriend(@Path("id") id: String): Response<AcceptFriendResultDto>
 
     @POST("friends/requests/{id}/decline")
     suspend fun declineFriend(@Path("id") id: String): Response<Unit>
