@@ -166,15 +166,33 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
         }
     }
 
+    /**
+     * Enviar pedido de amizade: a linha do resultado ja mostra "Pedido enviado"
+     * NA HORA. A API roda em seguida e, no fim, o reload reconcilia (inclusive o
+     * caso raro em que a pessoa ja tinha pedido e a amizade e aceita direto).
+     */
     fun add(
         nickname: String,
         alsoOfferShare: Boolean = false,
         alsoRequestShare: Boolean = false,
-    ) = launchBusy("add:$nickname") {
-        repo.addFriend(nickname, alsoOfferShare, alsoRequestShare)
-        onQuery(_state.value.query)
-        load(silent = true)
-        signalSocial()
+    ) = viewModelScope.launch {
+        _state.update { st ->
+            st.copy(
+                busy = st.busy + "add:$nickname",
+                results = st.results.map { if (it.nickname == nickname) it.copy(relation = "request_sent") else it },
+            )
+        }
+        val r = repo.addFriend(nickname, alsoOfferShare, alsoRequestShare)
+        _state.update { it.copy(busy = it.busy - "add:$nickname") }
+        when (r) {
+            is ApiResult.Ok -> { onQuery(_state.value.query); load(silent = true); signalSocial() }
+            is ApiResult.Failure -> _state.update { st ->
+                st.copy(
+                    results = st.results.map { if (it.nickname == nickname) it.copy(relation = "none") else it },
+                    error = r.message,
+                )
+            }
+        }
     }
 
     /**
@@ -290,15 +308,6 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
     private fun signalSocial() {
         com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.FRIENDS)
         com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
-    }
-
-    private fun launchBusy(key: String, block: suspend () -> Unit) = viewModelScope.launch {
-        _state.update { it.copy(busy = it.busy + key) }
-        try {
-            block()
-        } finally {
-            _state.update { it.copy(busy = it.busy - key) }
-        }
     }
 }
 

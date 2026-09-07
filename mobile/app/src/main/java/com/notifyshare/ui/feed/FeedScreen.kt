@@ -96,7 +96,9 @@ class FeedViewModel(
     }
 
     fun applyFilter(filter: com.notifyshare.data.FeedQuery) {
-        _state.value = _state.value.copy(filter = filter, loading = true, error = null)
+        // mantem a lista atual visivel enquanto a filtrada carrega — melhor a
+        // informacao anterior do que um spinner por cima do nada.
+        _state.value = _state.value.copy(filter = filter, error = null)
         load(silent = true)
     }
 

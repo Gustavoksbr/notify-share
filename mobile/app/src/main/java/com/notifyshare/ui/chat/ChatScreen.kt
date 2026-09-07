@@ -190,7 +190,38 @@ class ChatViewModel(
         val editing = _state.value.editing
         val replyId = _state.value.replyingTo?.id
         val eventId = _state.value.linkedEventId
-        _state.value = _state.value.copy(sending = true, input = "")
+        val replySnippet = _state.value.replyingTo?.let {
+            com.notifyshare.data.remote.ReplySnippetDto(
+                id = it.id,
+                preview = it.body.orEmpty().take(120),
+                mine = it.mine,
+                deleted = it.deleted,
+            )
+        }
+        // Otimista: a mensagem aparece NA HORA (bolha "enviando"). Ao editar,
+        // o texto novo entra na bolha ja existente. O load silencioso depois
+        // troca pela versao real do servidor; se falhar, desfaz.
+        val tempId = "pending-${System.nanoTime()}"
+        _state.value = if (editing != null) {
+            _state.value.copy(
+                sending = true, input = "", replyingTo = null, editing = null,
+                linkedEventId = null, linkedEventLabel = null,
+                items = _state.value.items.map {
+                    if (it.id == editing.id) it.copy(body = text, edited = true) else it
+                },
+            )
+        } else {
+            val optimistic = TimelineItemDto(
+                kind = "message", id = tempId, at = java.time.Instant.now().toString(),
+                mine = true, body = text, replyTo = replySnippet,
+            )
+            _state.value.copy(
+                sending = true, input = "", replyingTo = null, editing = null,
+                linkedEventId = null, linkedEventLabel = null,
+                items = listOf(optimistic) + _state.value.items,
+            )
+        }
+
         viewModelScope.launch {
             val r: ApiResult<*> = if (editing != null) {
                 repo.edit(editing.id, text)
@@ -199,11 +230,7 @@ class ChatViewModel(
             }
             when (r) {
                 is ApiResult.Ok -> {
-                    _state.value = _state.value.copy(
-                        sending = false, blockedNotice = null,
-                        replyingTo = null, editing = null,
-                        linkedEventId = null, linkedEventLabel = null,
-                    )
+                    _state.value = _state.value.copy(sending = false, blockedNotice = null)
                     load(silent = true)
                 }
                 is ApiResult.Failure -> {
@@ -212,7 +239,11 @@ class ChatViewModel(
                         sending = false,
                         input = if (_state.value.input.isBlank()) text else _state.value.input,
                         blockedNotice = if (blocked) r.message else _state.value.blockedNotice,
+                        // tira a bolha temporaria; para edit, o load reconcilia o texto
+                        items = if (editing == null) _state.value.items.filterNot { it.id == tempId }
+                        else _state.value.items,
                     )
+                    if (editing != null) load(silent = true)
                 }
             }
         }
@@ -236,6 +267,11 @@ fun ChatScreen(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var highlightId by remember { mutableStateOf<String?>(null) }
+
+    // Acabei de enviar: rola pra mostrar a bolha nova (reverseLayout -> item 0).
+    androidx.compose.runtime.LaunchedEffect(state.sending) {
+        if (state.sending) runCatching { listState.animateScrollToItem(0) }
+    }
 
     // Toca no trecho da mensagem respondida -> rola ate ela e pisca o fundo.
     fun jumpToMessage(id: String) {
@@ -322,7 +358,7 @@ fun ChatScreen(
                         "audit" -> AuditLine(item)
                         else -> MessageBubble(
                             item = item,
-                            deleting = item.id in state.deleting,
+                            deleting = item.id in state.deleting || item.id.startsWith("pending-"),
                             highlighted = item.id == highlightId,
                             onReply = { vm.startReply(item) },
                             onEdit = { vm.startEdit(item) },
