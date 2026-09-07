@@ -43,6 +43,7 @@ import com.notifyshare.ui.theme.NotifyShareColors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class UserProfileUiState(
@@ -98,20 +99,17 @@ class UserProfileViewModel(
         com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
     }
 
-    fun block() = viewModelScope.launch {
-        _state.value = _state.value.copy(working = true)
-        repo.block(nickname)
-        _state.value = _state.value.copy(working = false)
-        load()
-        signalSocial()
-    }
+    fun block() = toggleBlock(true) { repo.block(nickname) }
+    fun unblock() = toggleBlock(false) { repo.unblock(nickname) }
 
-    fun unblock() = viewModelScope.launch {
-        _state.value = _state.value.copy(working = true)
-        repo.unblock(nickname)
-        _state.value = _state.value.copy(working = false)
-        load()
-        signalSocial()
+    /** O estado "bloqueado" vira na hora; a API e o reload vao em segundo plano. */
+    private fun toggleBlock(blocked: Boolean, call: suspend () -> ApiResult<*>) = viewModelScope.launch {
+        val before = _state.value.profile
+        _state.update { it.copy(profile = it.profile?.copy(blockedByMe = blocked)) }
+        when (val r = call()) {
+            is ApiResult.Ok -> { load(); signalSocial() }
+            is ApiResult.Failure -> _state.update { it.copy(profile = before, notice = r.message) }
+        }
     }
 
     /** Peço para @nickname compartilhar as notificações dele comigo. */
@@ -148,16 +146,20 @@ class UserProfileViewModel(
         signalSocial()
     }
 
-    /** Cancela um pedido/oferta pendente que eu iniciei. */
+    /** Cancela um pedido/oferta pendente que eu iniciei — some da tela na hora. */
     fun cancelPending(grantId: String) = viewModelScope.launch {
-        _state.value = _state.value.copy(working = true, notice = null)
-        val r = repo.declineGrant(grantId)
-        _state.value = _state.value.copy(
-            working = false,
-            notice = if (r is ApiResult.Failure) r.message else "Pedido cancelado.",
-        )
-        load()
-        signalSocial()
+        val before = _state.value.profile
+        _state.update { st ->
+            val p = st.profile ?: return@update st.copy(notice = null)
+            st.copy(
+                profile = p.copy(outgoingPending = p.outgoingPending.filterNot { it.id == grantId }),
+                notice = null,
+            )
+        }
+        when (val r = repo.declineGrant(grantId)) {
+            is ApiResult.Ok -> { _state.update { it.copy(notice = "Pedido cancelado.") }; load(); signalSocial() }
+            is ApiResult.Failure -> _state.update { it.copy(profile = before, notice = r.message) }
+        }
     }
 
     fun dismissNotice() { _state.value = _state.value.copy(notice = null) }

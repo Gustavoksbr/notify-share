@@ -174,13 +174,13 @@ class ChatViewModel(
         resolveLinkedLabel(_state.value.items)
     }
 
+    /** Some da conversa na hora; se o servidor recusar, a mensagem volta. */
     fun deleteMessage(item: TimelineItemDto) = viewModelScope.launch {
-        _state.value = _state.value.copy(deleting = _state.value.deleting + item.id)
-        try {
-            repo.delete(item.id)
-            load(silent = true)
-        } finally {
-            _state.value = _state.value.copy(deleting = _state.value.deleting - item.id)
+        val before = _state.value.items
+        _state.value = _state.value.copy(items = _state.value.items.filterNot { it.id == item.id })
+        when (repo.delete(item.id)) {
+            is ApiResult.Ok -> load(silent = true)
+            is ApiResult.Failure -> _state.value = _state.value.copy(items = before)
         }
     }
 

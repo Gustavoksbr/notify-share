@@ -43,6 +43,7 @@ import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.theme.NotifyIcons
 import com.notifyshare.ui.theme.NotifyShareColors
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -135,9 +136,13 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
     fun load(silent: Boolean = false) {
         if (!silent) _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
-            val sharer = repo.grants("sharer")
-            val recipient = repo.grants("recipient")
-            val pending = repo.pendingGrants()
+            // As 3 chamadas partem juntas — tempo total = a mais lenta, nao a soma.
+            val sharerD = async { repo.grants("sharer") }
+            val recipientD = async { repo.grants("recipient") }
+            val pendingD = async { repo.pendingGrants() }
+            val sharer = sharerD.await()
+            val recipient = recipientD.await()
+            val pending = pendingD.await()
             _state.value = _state.value.copy(
                 loading = false,
                 refreshing = false,
@@ -174,12 +179,31 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
 
     fun dismissNotice() { _state.value = _state.value.copy(notice = null, noticeActionNick = null) }
 
-    fun togglePause(g: GrantDto) = launchBusy("pause:${g.id}") {
-        if (g.isPausedByMe) repo.resumeGrant(g.id) else repo.pauseGrant(g.id)
-        load(silent = true)
+    /**
+     * O Switch de pausar/retomar vira NA HORA (era um spinner de ~2s no lugar
+     * do Switch ate o pause + reload responderem). Se a API recusar, volta.
+     */
+    fun togglePause(g: GrantDto) = viewModelScope.launch {
+        val pausing = !g.isPausedByMe
+        val newStatus = if (pausing) "paused_by_${g.role}" else "active"
+        fun patch(status: String): (GrantDto) -> GrantDto = { if (it.id == g.id) it.copy(status = status) else it }
+        _state.update { it.copy(sharing = it.sharing.map(patch(newStatus)), receiving = it.receiving.map(patch(newStatus))) }
+        val r = if (pausing) repo.pauseGrant(g.id) else repo.resumeGrant(g.id)
+        if (r is ApiResult.Failure) {
+            _state.update {
+                it.copy(
+                    sharing = it.sharing.map(patch(g.status)),
+                    receiving = it.receiving.map(patch(g.status)),
+                    notice = r.message,
+                )
+            }
+        } else {
+            load(silent = true)
+        }
+        com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
     }
 
-    fun accept(id: String) = launchBusy("accept:$id") {
+    fun accept(id: String) = optimisticIncoming("accept:$id", id) {
         val r = repo.acceptGrant(id)
         if (r is ApiResult.Ok) {
             // atalho de onboarding: leva pras notificacoes desse contato
@@ -188,10 +212,28 @@ class ShareViewModel(private val repo: SocialRepository) : ViewModel() {
                 noticeActionNick = r.value.counterpart,
             )
         }
-        load(silent = true)
+        r
     }
-    fun decline(id: String) = launchBusy("decline:$id") { repo.declineGrant(id); load(silent = true) }
+    fun decline(id: String) = optimisticIncoming("decline:$id", id) { repo.declineGrant(id) }
     fun revoke(id: String) = launchBusy("revoke:$id") { repo.revokeGrant(id); load(silent = true) }
+
+    /**
+     * Pedido recebido: some da caixa NA HORA (aceitar/recusar e decisao local),
+     * so entao a API roda e o reload vem em segundo plano. Falhou -> o pedido
+     * volta e o aviso aparece. Antes ficava ~2s parado ate o reload responder.
+     */
+    private fun optimisticIncoming(key: String, id: String, call: suspend () -> ApiResult<*>) =
+        viewModelScope.launch {
+            val before = _state.value.incoming
+            _state.update { it.copy(busy = it.busy + key, incoming = it.incoming.filterNot { g -> g.id == id }) }
+            val r = call()
+            _state.update { it.copy(busy = it.busy - key) }
+            when (r) {
+                is ApiResult.Ok -> load(silent = true)
+                is ApiResult.Failure -> _state.update { it.copy(incoming = before, notice = r.message) }
+            }
+            com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
+        }
 
     private fun launchBusy(key: String, block: suspend () -> Unit) = viewModelScope.launch {
         _state.update { it.copy(busy = it.busy + key) }

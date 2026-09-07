@@ -94,10 +94,14 @@ fun PermissionsScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text("Compartilhamento em segundo plano", style = MaterialTheme.typography.titleMedium)
+                    ScopeTag("para enviar")
                     Text(
-                        "O serviço que envia suas notificações. É este que a notificação fixa desliga.",
+                        "Mantém suas notificações sendo compartilhadas mesmo com o app fechado.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -111,8 +115,8 @@ fun PermissionsScreen(
 
         PermissionCard(
             title = "Acesso às notificações",
-            body = "Permite o app ler suas notificações e reenviar a quem você escolheu para compartilhar.\nSuas notificações são lidas no próprio aparelho para aplicar as regras que você criar. " +
-                "Nada sai daqui sem uma regra sua.",
+            scope = "para enviar",
+            body = "Deixa o app ver suas notificações para compartilhar com seus amigos as que você escolher.",
             granted = notificationAccess,
             required = true,
             onClick = {
@@ -127,8 +131,9 @@ fun PermissionsScreen(
         // outros apps). Sem ela o sistema bloqueia os avisos do Notify Share.
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             PermissionCard(
-                title = "Permitir notificações",
-                body = "Permite que o app te envie notificações.\n Sem isso, o app não poderá enviar notificação nenhuma, nem do próprio app nem de outras pessoas",
+                title = "Mostrar notificações",
+                scope = "para receber",
+                body = "Deixa o app te avisar quando um amigo compartilhar uma notificação com você.",
                 granted = canPostNotifications,
                 required = true,
                 onClick = {
@@ -145,9 +150,9 @@ fun PermissionsScreen(
         // Store ("configuracao restrita"). So aparece se for o caso e ainda nao concedido.
         if (!notificationAccess && !installedFromPlayStore(context)) {
             Text(
-                "Se o Android disser \"configuração restrita\" e não deixar ativar: Configurações → " +
+                "Se aparecer \"configuração restrita\" e não deixar ativar: Configurações → " +
                     "Apps → Notify Share → menu (⋮) no canto → \"Permitir configurações restritas\". " +
-                    "Depois volte aqui. Apps da Play Store não precisam disso.",
+                    "Depois volte aqui.",
                 style = MaterialTheme.typography.labelMedium,
                 color = NotifyShareColors.warning,
                 modifier = Modifier
@@ -159,7 +164,8 @@ fun PermissionsScreen(
 
         PermissionCard(
             title = "Ignorar economia de bateria",
-            body = "Sem isso o sistema corta a internet do app quando a tela apaga, e os avisos chegam horas depois.",
+            scope = "enviar e receber",
+            body = "Faz as notificações chegarem na hora, mesmo com o celular parado ou a tela apagada.",
             granted = batteryExempt,
             required = true,
             onClick = {
@@ -181,9 +187,8 @@ fun PermissionsScreen(
         if (autostart != null) {
             PermissionCard(
                 title = "Início automático (opcional)",
-                body = "Deixa o app se reabrir sozinho e receber avisos em segundo plano de forma mais confiável. " +
-                    "O Android não deixa a gente confirmar se está ligado — por isso o botão não muda, " +
-                    "mesmo depois de você ativar lá nas configurações.",
+                scope = "enviar e receber",
+                body = "Faz o app voltar a funcionar sozinho depois que você reinicia o celular.",
                 granted = null, // o sistema nao expoe esse estado pra nenhum app de terceiros; nao e bug nosso
                 required = false,
                 onClick = { runCatching { context.startActivity(autostart) } },
@@ -207,17 +212,30 @@ fun PermissionsScreen(
         }
         */
 
-        Text(
-            "Enquanto houver compartilhamento ativo, uma notificação fixa fica visível no seu aparelho. " +
-                "É assim que você sabe que está ligado.",
-            style = MaterialTheme.typography.labelMedium,
-            color = NotifyShareColors.muted,
-            modifier = Modifier
-                .padding(16.dp)
-                .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
-                .padding(14.dp),
-        )
+        // Text(
+        //     "Enquanto houver compartilhamento ativo, uma notificação fixa fica visível no seu aparelho. " +
+        //         "É assim que você sabe que está ligado.",
+        //     style = MaterialTheme.typography.labelMedium,
+        //     color = NotifyShareColors.muted,
+        //     modifier = Modifier
+        //         .padding(16.dp)
+        //         .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
+        //         .padding(14.dp),
+        // )
     }
+}
+
+/** Tag discreta que diz se a permissao serve pro envio, pro recebimento ou os dois. */
+@Composable
+private fun ScopeTag(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 @Composable
@@ -226,6 +244,7 @@ private fun PermissionCard(
     body: String,
     granted: Boolean?,
     required: Boolean,
+    scope: String? = null,
     onClick: () -> Unit,
 ) {
     Column(
@@ -237,7 +256,13 @@ private fun PermissionCard(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, fill = false))
+            if (scope != null) ScopeTag(scope)
+        }
         Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         // granted == null: nao sabemos o estado real (ex.: inicio automatico —

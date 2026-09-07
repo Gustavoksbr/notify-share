@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index, follow">
+<title>Política de Privacidade — Notify Share</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1c1e21;
+    --muted: #5b6169;
+    --border: #e3e6ea;
+    --accent: #2f6feb;
+    --card: #f7f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c;
+      --fg: #e7e9ec;
+      --muted: #9aa1ab;
+      --border: #2b2f36;
+      --accent: #6ea8ff;
+      --card: #1e2126;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 22px 96px;
+  }
+  header { margin-bottom: 32px; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 6px; }
+  h2 {
+    font-size: 1.18rem;
+    margin: 40px 0 12px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+  h3 { font-size: 1rem; margin: 22px 0 6px; }
+  p, li { color: var(--fg); }
+  a { color: var(--accent); }
+  .lead { color: var(--muted); }
+  .updated { color: var(--muted); font-size: 0.9rem; }
+  ul { padding-left: 22px; }
+  li { margin: 5px 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 16px 0;
+  }
+  .card p:first-child { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { background: var(--card); padding: 1px 5px; border-radius: 5px; font-size: 0.9em; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 0.88rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Política de Privacidade — Notify Share</h1>
+    <p class="lead">Como o aplicativo Notify Share coleta, usa e protege os seus dados.</p>
+    <p class="updated">Última atualização: 6 de setembro de 2026 · Vigência: 6 de setembro de 2026</p>
+  </header>
+
+  <h2>1. Quem é o responsável</h2>
+  <p>
+    O responsável pelo tratamento dos dados (controlador, nos termos da LGPD — Lei nº 13.709/2018) é:
+  </p>
+  <div class="card">
+    <p><strong>Gustavo Kenzo Salesi</strong> — desenvolvedor independente<br>
+    Brasil<br>
+    Contato: <a href="mailto:gustavoksbr@gmail.com">gustavoksbr@gmail.com</a></p>
+  </div>
+  <p>
+    O Notify Share deixa você compartilhar notificações selecionadas do seu aparelho com amigos
+    que você mesmo autoriza, segundo regras que você define. Esta política explica exatamente
+    o que sai do seu aparelho e o que nunca sai.
+  </p>
+
+  <h2>2. Dados que coletamos</h2>
+
+  <h3>2.1. Dados da conta</h3>
+  <ul>
+    <li><strong>Nickname</strong> — identificador público; é por ele que outras pessoas te encontram.</li>
+    <li><strong>E-mail</strong> — obrigatório e único. É privado: nunca é exibido a outros usuários.</li>
+    <li><strong>Senha</strong> — guardada apenas como hash <code>bcrypt</code>; nunca em texto legível. Contas criadas via Google podem não ter senha.</li>
+    <li><strong>Identificador da conta Google</strong> (<code>google_sub</code>) — apenas se você entrar com o Google, para reconhecer a mesma conta em logins futuros.</li>
+    <li><strong>Datas</strong> de criação da conta e do aceite desta política.</li>
+  </ul>
+
+  <h3>2.2. Dados do dispositivo</h3>
+  <ul>
+    <li><strong>Token de notificação push</strong> (Firebase Cloud Messaging) e um <strong>rótulo do aparelho</strong> — necessários para entregar notificações quando o app está em segundo plano.</li>
+  </ul>
+
+  <h3>2.3. Notificações que você escolhe compartilhar</h3>
+  <p>
+    Quando uma regra criada por você determina o compartilhamento, o servidor recebe, daquela
+    notificação específica:
+  </p>
+  <ul>
+    <li>o nome do app de origem (ex.: <code>com.whatsapp</code>);</li>
+    <li>o tipo do evento (mensagem, bateria, rede, sistema);</li>
+    <li>um <strong>hash irreversível</strong> do remetente — nunca o nome do remetente;</li>
+    <li>data e hora;</li>
+    <li>o <strong>texto</strong> da notificação (quando a sua regra inclui o conteúdo; regras de "somente remetente" não enviam texto).</li>
+  </ul>
+  <p>
+    Apenas notificações cobertas por uma regra sua são enviadas, e apenas aos amigos que você
+    autorizou. Notificações de apps que não estão em nenhuma regra <strong>nunca</strong> saem do aparelho.
+  </p>
+
+  <h3>2.4. Mensagens do chat</h3>
+  <ul>
+    <li>O <strong>texto</strong> das mensagens que você troca com outro usuário dentro do app.</li>
+  </ul>
+
+  <h3>2.5. Grafo social</h3>
+  <ul>
+    <li>Amigos, solicitações de amizade, bloqueios, compartilhamentos concedidos, silenciamentos e os filtros das suas regras.</li>
+  </ul>
+
+  <h3>2.6. Estado de leitura</h3>
+  <ul>
+    <li>Quais notificações e mensagens você já visualizou, e quando.</li>
+  </ul>
+
+  <h3>2.7. Dados de diagnóstico (falhas)</h3>
+  <p>
+    Se o app travar, o Firebase Crashlytics envia um relatório contendo o tipo de erro, o modelo
+    do aparelho, a versão do Android, a versão do app e o seu nickname (para identificar relatos
+    durante a fase de testes). Esse relatório <strong>não</strong> contém conteúdo de notificações
+    nem de mensagens.
+  </p>
+
+  <h2>3. Dados que NÃO coletamos</h2>
+  <div class="card">
+    <ul>
+      <li><strong>Localização</strong> — o app não solicita nem utiliza GPS ou qualquer sinal de localização.</li>
+      <li><strong>Seus contatos</strong> — a agenda é lida <strong>apenas no seu aparelho</strong>, somente quando você abre o seletor de contato, e apenas o <strong>nome</strong> que você toca é usado como rótulo do convite. Números de telefone e a lista de contatos nunca são enviados ao servidor.</li>
+      <li><strong>Notificações de apps fora das suas regras</strong> e de apps que você desativou.</li>
+    </ul>
+  </div>
+
+  <h2>4. Acesso a Notificações (NotificationListenerService)</h2>
+  <p>
+    O Notify Share usa a permissão <strong>Acesso a Notificações</strong> do Android exclusivamente
+    para ler as notificações do seu aparelho e aplicar as regras de compartilhamento que você
+    define. A leitura acontece localmente, no aparelho. Nenhuma notificação é enviada a servidores
+    ou a terceiros, exceto quando uma regra criada por você determina o compartilhamento com um
+    contato que você autorizou. O conteúdo das notificações não é usado para publicidade e não é
+    vendido.
+  </p>
+
+  <h2>5. Com quem os dados são compartilhados</h2>
+  <p>Usamos os seguintes provedores para operar o serviço (operadores, nos termos da LGPD):</p>
+  <table>
+    <tr><th>Provedor</th><th>Finalidade</th></tr>
+    <tr><td>Google Firebase (Google LLC)</td><td>Entrega de notificações push (Cloud Messaging), relatórios de falha (Crashlytics) e métricas agregadas de uso (Analytics)</td></tr>
+    <tr><td>Supabase</td><td>Banco de dados (PostgreSQL) onde os dados da conta e os dados de compartilhamento ficam armazenados</td></tr>
+    <tr><td>Render</td><td>Hospedagem do servidor da aplicação</td></tr>
+  </table>
+  <p>
+    Não vendemos os seus dados e não os usamos para publicidade. Só divulgamos dados a terceiros
+    fora desta lista se exigido por lei ou ordem judicial.
+  </p>
+
+  <h2>6. Por quanto tempo guardamos</h2>
+  <table>
+    <tr><th>Dado</th><th>Retenção</th></tr>
+    <tr><td>Notificações compartilhadas</td><td>Apagadas automaticamente 7 dias após a entrega</td></tr>
+    <tr><td>Mensagens do chat</td><td>Até você apagá-las</td></tr>
+    <tr><td>Dados da conta (nickname, e-mail, amigos, compartilhamentos)</td><td>Enquanto a conta existir</td></tr>
+    <tr><td>Relatórios de falha</td><td>Retidos pelo Firebase Crashlytics por até 90 dias</td></tr>
+  </table>
+  <p>Ao excluir a sua conta, todos os dados associados são removidos do servidor.</p>
+
+  <h2>7. Seus direitos</h2>
+  <p>Você pode, a qualquer momento e diretamente no app:</p>
+  <ul>
+    <li><strong>Acessar e portar seus dados</strong> — Perfil → Privacidade e dados → "Baixar meus dados" gera um arquivo com tudo que o servidor guarda sobre você.</li>
+    <li><strong>Apagar seu histórico</strong> — Perfil → Zona de perigo → apagar histórico.</li>
+    <li><strong>Excluir sua conta</strong> — Perfil → Zona de perigo → excluir conta. A exclusão é imediata e irreversível e remove todos os seus dados do servidor.</li>
+  </ul>
+  <p>
+    Para dúvidas, correções ou qualquer pedido relativo aos seus dados, escreva para
+    <a href="mailto:gustavoksbr@gmail.com">gustavoksbr@gmail.com</a>. Você também tem o direito de
+    reclamar à Autoridade Nacional de Proteção de Dados (ANPD).
+  </p>
+
+  <h2>8. Segurança</h2>
+  <ul>
+    <li>Todo o tráfego entre o app e o servidor usa HTTPS/TLS.</li>
+    <li>Senhas são guardadas apenas como hash <code>bcrypt</code>.</li>
+    <li>Tokens de sessão têm rotação e detecção de reuso: um token vazado é revogado junto com toda a sua família.</li>
+    <li>O seu e-mail nunca é exibido a outros usuários.</li>
+  </ul>
+
+  <h2>9. Crianças</h2>
+  <p>
+    O Notify Share não é direcionado a menores de 13 anos e não coletamos intencionalmente dados
+    de crianças. Se você acredita que uma criança nos forneceu dados, escreva para
+    <a href="mailto:gustavoksbr@gmail.com">gustavoksbr@gmail.com</a> e nós os removeremos.
+  </p>
+
+  <h2>10. Alterações nesta política</h2>
+  <p>
+    Alterações serão publicadas nesta página, com a data de "Última atualização" revista.
+    Mudanças relevantes serão avisadas dentro do app.
+  </p>
+
+  <footer>
+    Notify Share · <a href="mailto:gustavoksbr@gmail.com">gustavoksbr@gmail.com</a>
+  </footer>
+</main>
+</body>
+</html>

@@ -35,6 +35,7 @@ import com.notifyshare.data.ApiResult
 import com.notifyshare.data.SocialRepository
 import com.notifyshare.data.remote.FriendDto
 import com.notifyshare.data.remote.FriendRequestDto
+import com.notifyshare.data.remote.GrantDto
 import com.notifyshare.data.remote.SearchResultDto
 import com.notifyshare.ui.common.Avatar
 import com.notifyshare.ui.common.EmptyState
@@ -46,6 +47,7 @@ import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.theme.NotifyIcons
 import com.notifyshare.ui.theme.NotifyShareColors
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,7 +71,15 @@ data class FriendsUiState(
     val shareGrants: Set<String> = emptySet(),
     /** Acoes em curso: "add:<nick>", "accept:<id>", "decline:<id>". */
     val busy: Set<String> = emptySet(),
+    /**
+     * Aparece logo depois de aceitar uma amizade em que a outra pessoa ja tinha
+     * marcado que queria compartilhar/receber — os pedidos de compartilhamento
+     * pendentes pra responder na hora, sem ter que ir procurar em Compartilhar.
+     */
+    val pendingShareFrom: PendingShareOffer? = null,
 )
+
+data class PendingShareOffer(val nickname: String, val grants: List<GrantDto>)
 
 class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
 
@@ -95,11 +105,17 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
     fun load(silent: Boolean = false) {
         if (!silent) _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
-            val friends = repo.friends()
-            val requests = repo.friendRequests()
+            // As 4 chamadas partem juntas: o tempo total passa a ser o da mais
+            // lenta, nao a soma das quatro (na Render fria isso levava segundos).
+            val friendsD = async { repo.friends() }
+            val requestsD = async { repo.friendRequests() }
+            val sharerD = async { repo.grants("sharer") }
+            val recipientD = async { repo.grants("recipient") }
+            val friends = friendsD.await()
+            val requests = requestsD.await()
+            val sharer = sharerD.await()
+            val recipient = recipientD.await()
             val friendsOk = friends as? ApiResult.Ok
-            val sharer = repo.grants("sharer")
-            val recipient = repo.grants("recipient")
             val anyGrantOk = sharer is ApiResult.Ok || recipient is ApiResult.Ok
             val grantNicks = buildSet {
                 (sharer as? ApiResult.Ok)?.value?.forEach { add(it.counterpart) }
@@ -150,17 +166,84 @@ class FriendsViewModel(private val repo: SocialRepository) : ViewModel() {
         signalSocial()
     }
 
-    fun accept(id: String) = launchBusy("accept:$id") {
-        repo.acceptFriend(id); load(silent = true); signalSocial()
+    /**
+     * Aceitar amizade: tira o pedido da lista na hora e, se o backend acabou de
+     * criar pedidos de compartilhamento (a pessoa marcou "quero receber/enviar"
+     * junto do pedido), abre a modal pra responder na hora.
+     */
+    fun accept(id: String) = viewModelScope.launch {
+        val before = _state.value
+        val req = before.incoming.firstOrNull { it.id == id } ?: return@launch
+        _state.update { it.copy(busy = it.busy + "accept:$id", incoming = it.incoming.filterNot { r -> r.id == id }) }
+        val r = repo.acceptFriend(id)
+        _state.update { it.copy(busy = it.busy - "accept:$id") }
+        when (r) {
+            is ApiResult.Failure -> _state.update { it.copy(incoming = before.incoming, error = r.message) }
+            is ApiResult.Ok -> {
+                signalSocial()
+                val offers = (repo.pendingGrants() as? ApiResult.Ok)?.value?.incoming
+                    ?.filter { it.counterpart == req.nickname }
+                    .orEmpty()
+                _state.update {
+                    it.copy(pendingShareFrom = offers.takeIf { o -> o.isNotEmpty() }?.let { o -> PendingShareOffer(req.nickname, o) })
+                }
+                load(silent = true)
+            }
+        }
     }
-    fun decline(id: String) = launchBusy("decline:$id") {
-        repo.declineFriend(id); load(silent = true); signalSocial()
-    }
-    fun cancel(id: String) = launchBusy("cancel:$id") {
-        repo.cancelFriendRequest(id)
-        onQuery(_state.value.query)
-        load(silent = true)
+
+    /** Responde um pedido de compartilhamento da modal pos-amizade. */
+    fun respondShareOffer(grantId: String, accept: Boolean) = viewModelScope.launch {
+        _state.update { st ->
+            val cur = st.pendingShareFrom ?: return@update st
+            val left = cur.grants.filterNot { it.id == grantId }
+            st.copy(pendingShareFrom = if (left.isEmpty()) null else cur.copy(grants = left))
+        }
+        if (accept) repo.acceptGrant(grantId) else repo.declineGrant(grantId)
         signalSocial()
+        load(silent = true)
+    }
+
+    fun dismissShareModal() = _state.update { it.copy(pendingShareFrom = null) }
+
+    fun decline(id: String) = optimistic("decline:$id", fromIncoming = true, id = id) { repo.declineFriend(id) }
+    fun cancel(id: String) = optimistic("cancel:$id", fromIncoming = false, id = id) {
+        repo.cancelFriendRequest(id).also { if (it is ApiResult.Ok) onQuery(_state.value.query) }
+    }
+
+    /**
+     * Aceitar / recusar / cancelar tira o pedido da lista NA HORA — a decisao e
+     * local, nao precisa esperar o servidor. So depois a API e chamada e, em
+     * segundo plano, amigos/grants sao relidos. Se a chamada falhar, o pedido
+     * volta e o erro aparece. Antes o pedido ficava ~2s parado na tela ate o
+     * reload inteiro (5 chamadas em sequencia) responder.
+     */
+    private fun optimistic(
+        key: String,
+        fromIncoming: Boolean,
+        id: String,
+        call: suspend () -> ApiResult<*>,
+    ) = viewModelScope.launch {
+        val before = _state.value
+        _state.update {
+            it.copy(
+                busy = it.busy + key,
+                incoming = if (fromIncoming) it.incoming.filterNot { r -> r.id == id } else it.incoming,
+                outgoing = if (fromIncoming) it.outgoing else it.outgoing.filterNot { r -> r.id == id },
+            )
+        }
+        val r = call()
+        _state.update { it.copy(busy = it.busy - key) }
+        when (r) {
+            is ApiResult.Ok -> { load(silent = true); signalSocial() }
+            is ApiResult.Failure -> _state.update {
+                it.copy(
+                    incoming = if (fromIncoming) before.incoming else it.incoming,
+                    outgoing = if (fromIncoming) it.outgoing else before.outgoing,
+                    error = r.message,
+                )
+            }
+        }
     }
 
     /** Amizade e compartilhamento andam juntos (pedido com share) — avisa os dois. */
@@ -343,6 +426,55 @@ fun FriendsScreen(
             },
         )
     }
+
+    state.pendingShareFrom?.let { offer ->
+        ShareOfferDialog(
+            offer = offer,
+            onRespond = vm::respondShareOffer,
+            onLater = vm::dismissShareModal,
+        )
+    }
+}
+
+/**
+ * Aparece logo apos aceitar uma amizade em que a outra pessoa marcou "quero
+ * receber/enviar". Cada direcao tem seu botao de aceitar/recusar; "Ver depois"
+ * so fecha — os pedidos continuam em Compartilhar.
+ */
+@Composable
+private fun ShareOfferDialog(
+    offer: PendingShareOffer,
+    onRespond: (grantId: String, accept: Boolean) -> Unit,
+    onLater: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onLater,
+        title = { Text("Compartilhamento com @${offer.nickname}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    "@${offer.nickname} pediu isto junto do pedido de amizade:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NotifyShareColors.muted,
+                )
+                offer.grants.forEach { g ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            if (g.role == "sharer") "Quer receber as suas notificações"
+                            else "Quer te enviar as notificações dele",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            InlineActionButton("Recusar", { onRespond(g.id, false) })
+                            PillButton("Aceitar", { onRespond(g.id, true) })
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onLater) { Text("Ver depois") } },
+    )
 }
 
 @Composable

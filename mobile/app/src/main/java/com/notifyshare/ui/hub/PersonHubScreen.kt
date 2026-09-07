@@ -314,41 +314,58 @@ private fun PersonAppsTab(
         return
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 28.dp),
-    ) {
+    // Sub-abas horizontais (como em Notificações): uma direção por vez, sem
+    // precisar rolar a tela toda pra chegar na de baixo.
+    var sub by rememberSaveable { mutableIntStateOf(0) }
+
+    Column(Modifier.fillMaxSize()) {
         NotificationAccessWarning()
-
-        SectionLabel("Você compartilha com @$nickname")
-        val sharerGrantId = hub.sharerGrantId
-        if (sharerGrantId != null) {
-            SharerAppsSection(hubEntry, container, sharerGrantId, onOpenAppPicker)
-        } else {
-            OutlinedActionButton(
-                "Oferecer minhas notificações para @$nickname",
-                onClick = onOffer,
-                loading = hub.working,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
-            )
+        TabRow(selectedTabIndex = sub, containerColor = MaterialTheme.colorScheme.surface) {
+            Tab(selected = sub == 0, onClick = { sub = 0 }, text = { Text("Eu envio") })
+            Tab(selected = sub == 1, onClick = { sub = 1 }, text = { Text("Ele envia") })
         }
 
-        Spacer(Modifier.height(18.dp))
-
-        SectionLabel("@$nickname compartilha com você")
-        val recipientGrantId = hub.recipientGrantId
-        if (recipientGrantId != null) {
-            RecipientNotifySection(hubEntry, container, recipientGrantId, nickname)
-        } else {
-            OutlinedActionButton(
-                "Pedir para receber as notificações de @$nickname",
-                onClick = onRequest,
-                loading = hub.working,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
-            )
+        Box(Modifier.weight(1f)) {
+            if (sub == 0) {
+                val sharerGrantId = hub.sharerGrantId
+                if (sharerGrantId != null) {
+                    SharerAppsSection(hubEntry, container, sharerGrantId, onOpenAppPicker)
+                } else {
+                    AppsTabEmpty(
+                        "Você ainda não compartilha com @$nickname.",
+                        "Oferecer minhas notificações para @$nickname",
+                        hub.working, onOffer,
+                    )
+                }
+            } else {
+                val recipientGrantId = hub.recipientGrantId
+                if (recipientGrantId != null) {
+                    Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 28.dp),
+                    ) {
+                        RecipientNotifySection(hubEntry, container, recipientGrantId, nickname)
+                    }
+                } else {
+                    AppsTabEmpty(
+                        "@$nickname ainda não compartilha com você.",
+                        "Pedir para receber as notificações de @$nickname",
+                        hub.working, onRequest,
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun AppsTabEmpty(text: String, action: String, loading: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = NotifyShareColors.muted)
+        OutlinedActionButton(action, onClick = onClick, loading = loading, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -367,47 +384,56 @@ private fun SharerAppsSection(
     val state by vm.state.collectAsStateWithLifecycle()
     var contactPickerFor by remember { mutableStateOf<String?>(null) }
 
-    Text(
-        "Adicionar app",
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .clickable { onOpenAppPicker(grantId) }
-            .padding(vertical = 6.dp),
-    )
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(top = 6.dp, bottom = 12.dp),
+        ) {
+            Text(
+                "Adicionar app",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(horizontal = 18.dp)
+                    .clickable { onOpenAppPicker(grantId) }
+                    .padding(vertical = 6.dp),
+            )
 
-    when {
-        state.loading -> Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-        }
-        state.rules.isEmpty() -> Text(
-            "Nenhum app liberado ainda.",
-            style = MaterialTheme.typography.bodySmall,
-            color = NotifyShareColors.muted,
-            modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp),
-        )
-        else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            state.rules.forEach { rule ->
-                RuleCard(
-                    rule = rule,
-                    onToggle = { vm.toggleEnabled(rule.packageName) },
-                    onMode = { vm.setMode(rule.packageName, it) },
-                    onAllSenders = { vm.toggleAllSenders(rule.packageName) },
-                    onRemove = { vm.removeApp(rule.packageName) },
-                    onToggleSender = { h, l -> vm.toggleSender(rule.packageName, h, l) },
-                    onAddSender = { name ->
-                        vm.toggleSender(rule.packageName, com.notifyshare.notify.hashSender(name), name)
-                    },
-                    onOpenContactPicker = { contactPickerFor = rule.packageName },
+            when {
+                state.loading -> Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+                state.rules.isEmpty() -> Text(
+                    "Nenhum app liberado ainda.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NotifyShareColors.muted,
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp),
                 )
+                else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    state.rules.forEach { rule ->
+                        RuleCard(
+                            rule = rule,
+                            onToggle = { vm.toggleEnabled(rule.packageName) },
+                            onMode = { vm.setMode(rule.packageName, it) },
+                            onAllSenders = { vm.toggleAllSenders(rule.packageName) },
+                            onRemove = { vm.removeApp(rule.packageName) },
+                            onToggleSender = { h, l -> vm.toggleSender(rule.packageName, h, l) },
+                            onAddSender = { name ->
+                                vm.toggleSender(rule.packageName, com.notifyshare.notify.hashSender(name), name)
+                            },
+                            onOpenContactPicker = { contactPickerFor = rule.packageName },
+                        )
+                    }
+                }
             }
         }
-    }
 
-    com.notifyshare.ui.share.SaveRulesButton(
-        dirty = state.dirty, saving = state.saving, onSave = vm::save,
-    )
+        com.notifyshare.ui.share.SaveRulesButton(
+            dirty = state.dirty, saving = state.saving, onSave = vm::save,
+        )
+    }
 
     contactPickerFor?.let { pkg ->
         com.notifyshare.ui.share.ContactPickerSheet(

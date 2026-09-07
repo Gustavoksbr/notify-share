@@ -144,10 +144,20 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         }
     }
 
-    /** "Nickname ou senha incorretos" ganha "Resta(m) N tentativa(s)." quando o backend informa. */
+    /**
+     * Enriquece o erro do login: "Restam N tentativas antes do bloqueio
+     * temporário" enquanto ainda dá pra tentar, e "Tente de novo em Xmin"
+     * quando o backend já bloqueou (account_locked traz retryAfterSeconds).
+     */
     private fun ApiResult.Failure.withAttemptsHint(): String {
+        retryAfterSeconds?.let { secs ->
+            val mins = ((secs + 59) / 60).toInt()
+            val quando = if (mins <= 1) "cerca de 1 minuto" else "cerca de $mins minutos"
+            return "$message Tente de novo em $quando."
+        }
         val remaining = attemptsRemaining ?: return message
-        val suffix = if (remaining == 1) "Resta 1 tentativa." else "Restam $remaining tentativas."
+        val suffix = if (remaining == 1) "Resta 1 tentativa antes do bloqueio temporário."
+        else "Restam $remaining tentativas antes do bloqueio temporário."
         return "$message $suffix"
     }
 

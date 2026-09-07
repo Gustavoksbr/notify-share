@@ -348,14 +348,19 @@ internal fun RuleCard(
                         }
                     }
                     when (capability.senderPicker) {
-                        com.notifyshare.notify.SenderPickerType.CONTACTS -> Text(
-                            "Escolher contato",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable(onClick = onOpenContactPicker).padding(vertical = 6.dp),
-                        )
+                        com.notifyshare.notify.SenderPickerType.CONTACTS -> ContactPickerLink(onOpenContactPicker)
                         com.notifyshare.notify.SenderPickerType.FREE_TEXT ->
                             AddTermField("Adicionar remetente", onAddSender)
+                        com.notifyshare.notify.SenderPickerType.CONTACTS_AND_TEXT -> {
+                            ContactPickerLink(onOpenContactPicker)
+                            Text(
+                                "Conta comercial ou contato recém-salvo? Digite o nome exatamente como " +
+                                    "aparece na notificação.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NotifyShareColors.muted,
+                            )
+                            AddTermField("Nome como aparece na notificação", onAddSender)
+                        }
                         com.notifyshare.notify.SenderPickerType.NONE -> Unit
                     }
                 }
@@ -369,6 +374,16 @@ internal fun RuleCard(
             modifier = Modifier.clickable(onClick = onRemove),
         )
     }
+}
+
+@Composable
+private fun ContactPickerLink(onClick: () -> Unit) {
+    Text(
+        "Escolher contato",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.clickable(onClick = onClick).padding(vertical = 6.dp),
+    )
 }
 
 @Composable

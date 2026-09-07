@@ -16,8 +16,13 @@ package com.notifyshare.notify
  * `FREE_TEXT`: o app tambem carrega um Person por mensagem (MessagingStyle),
  * mas o nome não vem de uma agenda local previsivel — digitar o nome como
  * aparece na notificacao funciona.
+ *
+ * `CONTACTS_AND_TEXT`: normalmente o nome vem da agenda (WhatsApp), mas nao
+ * sempre — conta Business aparece pelo nome comercial verificado, e logo depois
+ * de salvar um contato ha uma janela em que o WhatsApp ainda mostra o numero.
+ * Entao oferecemos os dois: escolher da agenda OU digitar o nome exato.
  */
-enum class SenderPickerType { NONE, CONTACTS, FREE_TEXT }
+enum class SenderPickerType { NONE, CONTACTS, FREE_TEXT, CONTACTS_AND_TEXT }
 
 data class AppCapability(val senderPicker: SenderPickerType = SenderPickerType.NONE) {
     val supportsSenders: Boolean get() = senderPicker != SenderPickerType.NONE
@@ -26,8 +31,8 @@ data class AppCapability(val senderPicker: SenderPickerType = SenderPickerType.N
 object AppCapabilities {
 
     private val KNOWN: Map<String, AppCapability> = mapOf(
-        "com.whatsapp" to AppCapability(SenderPickerType.CONTACTS),
-        "com.whatsapp.w4b" to AppCapability(SenderPickerType.CONTACTS),
+        "com.whatsapp" to AppCapability(SenderPickerType.CONTACTS_AND_TEXT),
+        "com.whatsapp.w4b" to AppCapability(SenderPickerType.CONTACTS_AND_TEXT),
         "org.telegram.messenger" to AppCapability(SenderPickerType.FREE_TEXT),
         "org.thoughtcrime.securesms" to AppCapability(SenderPickerType.FREE_TEXT), // Signal
         "com.facebook.orca" to AppCapability(SenderPickerType.FREE_TEXT), // Messenger
