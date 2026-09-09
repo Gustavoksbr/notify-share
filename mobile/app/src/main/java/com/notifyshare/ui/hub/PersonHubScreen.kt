@@ -503,6 +503,7 @@ private fun RecipientNotifySection(
                             style = MaterialTheme.typography.labelSmall,
                             color = NotifyShareColors.muted,
                         )
+                        com.notifyshare.ui.share.RecipientSendersLine(rule)
                     }
                     Switch(
                         checked = rule.notify,

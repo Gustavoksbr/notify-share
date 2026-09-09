@@ -2,7 +2,12 @@ package com.notifyshare.auth.adapter.web
 
 import com.notifyshare.auth.application.AuthService
 import com.notifyshare.auth.application.IssuedTokens
+import com.notifyshare.auth.application.PasswordResetProperties
+import com.notifyshare.auth.application.PasswordResetService
+import org.springframework.beans.factory.annotation.Value
+import java.time.Duration
 import com.notifyshare.auth.domain.User
+import jakarta.servlet.http.HttpServletRequest
 import com.notifyshare.shared.config.OpenApiConfig.Companion.BEARER_SCHEME
 import com.notifyshare.shared.web.AuthenticatedUser
 import io.swagger.v3.oas.annotations.Operation
@@ -103,6 +108,46 @@ data class LogoutRequest(
     val refreshToken: String = "",
 )
 
+@Schema(description = "Pede um codigo de recuperacao de senha por e-mail")
+data class ForgotPasswordRequest(
+    @field:NotBlank(message = "Informe seu e-mail")
+    @field:Schema(example = "voce@exemplo.com")
+    val email: String = "",
+)
+
+@Schema(description = "Redefine a senha com o codigo recebido por e-mail")
+data class ResetPasswordRequest(
+    @field:NotBlank(message = "Informe seu e-mail")
+    @field:Schema(example = "voce@exemplo.com")
+    val email: String = "",
+
+    @field:NotBlank(message = "Informe o codigo")
+    @field:Schema(description = "Os 6 digitos enviados por e-mail.", example = "482913")
+    val code: String = "",
+
+    @field:NotBlank(message = "Informe a senha nova")
+    @field:Schema(description = "Minimo de 8 caracteres.", example = "senha-nova-123")
+    val newPassword: String = "",
+)
+
+@Schema(description = "Limites da recuperacao de senha, para a tela poder explica-los antes do erro")
+data class PasswordResetInfoResponse(
+    @field:Schema(description = "Quantos codigos errados o mesmo IP pode tentar antes do bloqueio.")
+    val maxCodeAttempts: Int,
+    @field:Schema(description = "Duracao do bloqueio, em minutos, ao esgotar as tentativas.")
+    val lockoutMinutes: Long,
+    @field:Schema(description = "Quantos pedidos de codigo o mesmo IP pode fazer na janela.")
+    val maxRequests: Int,
+    @field:Schema(description = "Tamanho da janela dos pedidos, em minutos.")
+    val requestWindowMinutes: Long,
+    @field:Schema(description = "Validade do codigo enviado por e-mail, em minutos.")
+    val codeTtlMinutes: Long,
+    @field:Schema(description = "Intervalo minimo entre dois envios para o mesmo e-mail, em segundos.")
+    val resendCooldownSeconds: Long,
+)
+
+private fun ceilMinutes(d: Duration): Long = (d.seconds + 59) / 60
+
 @Schema(description = "Perfil do proprio usuario. O e-mail so aparece aqui.")
 data class MeResponse(
     val id: UUID,
@@ -144,7 +189,28 @@ private fun IssuedTokens.toResponse() =
 @RestController
 @RequestMapping("/auth")
 @Tag(name = "Autenticacao", description = "Cadastro, login e ciclo de vida das sessoes")
-class AuthController(private val authService: AuthService) {
+class AuthController(
+    private val authService: AuthService,
+    private val passwordReset: PasswordResetService,
+    private val passwordResetProps: PasswordResetProperties,
+    @param:Value("\${notifyshare.rate-limit.password-reset-window:PT15M}")
+    private val passwordResetWindow: Duration,
+) {
+
+    @GetMapping("/password-reset-info")
+    @Operation(
+        summary = "Limites da recuperacao de senha",
+        description = "Publico. A tela usa isto para dizer de antemao quantos codigos podem " +
+            "ser pedidos, por quanto tempo o erro bloqueia e qual a janela.",
+    )
+    fun passwordResetInfo() = PasswordResetInfoResponse(
+        maxCodeAttempts = passwordResetProps.maxAttempts,
+        lockoutMinutes = ceilMinutes(passwordResetProps.lockoutDuration),
+        maxRequests = passwordResetProps.maxRequestsPerWindow,
+        requestWindowMinutes = ceilMinutes(passwordResetWindow),
+        codeTtlMinutes = ceilMinutes(passwordResetProps.codeTtl),
+        resendCooldownSeconds = passwordResetProps.sendCooldown.seconds,
+    )
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
@@ -212,6 +278,34 @@ class AuthController(private val authService: AuthService) {
     )
     fun refresh(@Valid @RequestBody body: RefreshRequest): TokenResponse =
         authService.refresh(body.refreshToken, body.deviceLabel).toResponse()
+
+    @PostMapping("/forgot-password")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(
+        summary = "Pede um codigo de recuperacao de senha",
+        description = "Responde 202 sempre, exista a conta ou nao — a API nao revela quais " +
+            "e-mails tem cadastro. Se existir e tiver senha, um codigo de 6 digitos vai por e-mail.",
+    )
+    fun forgotPassword(@Valid @RequestBody body: ForgotPasswordRequest) {
+        passwordReset.forgot(body.email)
+    }
+
+    @PostMapping("/reset-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(
+        summary = "Redefine a senha com o codigo do e-mail",
+        description = "Codigo errado/expirado -> 401 invalid_reset_code (com attemptsRemaining). " +
+            "Muitos erros do mesmo IP -> 429 reset_locked. Ao redefinir, todas as sessoes caem.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "Senha redefinida"),
+        ApiResponse(responseCode = "400", description = "code=weak_password"),
+        ApiResponse(responseCode = "401", description = "code=invalid_reset_code"),
+        ApiResponse(responseCode = "429", description = "code=reset_locked"),
+    )
+    fun resetPassword(@Valid @RequestBody body: ResetPasswordRequest, request: HttpServletRequest) {
+        passwordReset.reset(body.email, body.code, body.newPassword, request.remoteAddr)
+    }
 
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)

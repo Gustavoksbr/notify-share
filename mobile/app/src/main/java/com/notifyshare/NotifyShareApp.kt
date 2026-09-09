@@ -158,6 +158,27 @@ class NotifyShareApp : Application() {
         }
     }
 
+    /**
+     * Remove uma conta do aparelho. Se for a conta ATIVA, reinicia WebSocket/FCM
+     * e limpa o cache — igual a switchAccount. `onDone(removeuAtiva, aindaLogado)`.
+     */
+    fun removeAccount(id: String, onDone: (removedActive: Boolean, stillLoggedIn: Boolean) -> Unit) {
+        container.appScope.launch {
+            val removedActive = container.authRepository.activeAccountId() == id
+            container.authRepository.removeAccount(id)
+            val stillLoggedIn = container.authRepository.hasAnyAccount()
+            if (removedActive) {
+                container.cache.clear()
+                container.session.clear()
+                container.realtime.stop()
+                if (stillLoggedIn) container.realtime.start()
+                FcmSyncWorker.ensureRegistered(this@NotifyShareApp, force = true)
+                refreshSharing()
+            }
+            withContext(Dispatchers.Main) { onDone(removedActive, stillLoggedIn) }
+        }
+    }
+
     fun refreshSharing() {
         container.appScope.launch {
             // interruptor mestre: desligado = servico parado, sem mais nada

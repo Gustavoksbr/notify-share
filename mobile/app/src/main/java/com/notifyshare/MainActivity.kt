@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
 private object Routes {
     const val LOGIN = "login"
     const val REGISTER = "register"
+    const val RECOVER = "recover"
     const val PRIVACY = "privacy"
 }
 
@@ -95,14 +96,16 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
     LaunchedEffect(authState.authComplete) {
         if (authState.authComplete && addingAccount) {
             addingAccount = false
-            com.notifyshare.ui.restartUiForAccountChange(context)
+            // Toda autenticacao cai no feed (a Activity recriada le esse alvo).
+            com.notifyshare.ui.restartUiForAccountChange(context, openTarget = "feed")
         }
     }
 
     if (hasSession && !addingAccount) {
         MainShell(
             container = container,
-            openTarget = openTarget,
+            // Depois de qualquer login/cadastro, ignora deep link antigo e vai pro feed.
+            openTarget = openTarget?.takeIf { !authState.authComplete },
             onAddAccount = {
                 // limpa authComplete/senha do login anterior antes de abrir o form
                 authViewModel.resetForm()
@@ -119,6 +122,7 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
             LoginScreen(
                 viewModel = authViewModel,
                 onGoToRegister = { navController.navigate(Routes.REGISTER) },
+                onForgotPassword = { navController.navigate(Routes.RECOVER) },
                 onCancel = if (addingAccount) ({ addingAccount = false }) else null,
             )
         }
@@ -127,6 +131,13 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
                 viewModel = authViewModel,
                 onGoToLogin = { navController.popBackStack() },
                 onOpenPrivacy = { navController.navigate(Routes.PRIVACY) },
+            )
+        }
+        composable(Routes.RECOVER) {
+            com.notifyshare.ui.auth.RecoverPasswordScreen(
+                viewModel = authViewModel,
+                onBack = { navController.popBackStack() },
+                onDone = { navController.popBackStack(Routes.LOGIN, inclusive = false) },
             )
         }
         composable(Routes.PRIVACY) {

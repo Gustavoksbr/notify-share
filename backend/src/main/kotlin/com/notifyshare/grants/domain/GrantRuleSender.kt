@@ -8,8 +8,10 @@ import java.util.UUID
 
 /**
  * Remetente liberado de um app. `senderHash`, nao `senderName`: da para filtrar
- * por igualdade sem o servidor saber o nome. `senderLabel` e so para a UI de
- * quem compartilha e nunca sai para o destinatario.
+ * por igualdade sem o servidor saber o nome. `senderLabel` e o nome legivel: a
+ * UI de quem compartilha usa para a lista, e o destinatario tambem ve (em
+ * "recebo de") para saber de quais contatos daquele app ele recebe — de todo
+ * jeito ele veria o nome chegar na notificacao.
  */
 @Entity
 @Table(name = "grant_rule_senders")

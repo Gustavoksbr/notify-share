@@ -49,8 +49,6 @@ class AccountsViewModel(private val auth: AuthRepository) : ViewModel() {
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
-
-    fun remove(id: String) = viewModelScope.launch { auth.removeAccount(id) }
 }
 
 @Composable
@@ -73,13 +71,29 @@ fun AccountsScreen(
             if (google.isNotEmpty()) {
                 item { SectionLabel("Contas Google · entram na hora") }
                 items(google, key = { it.id }) { acc ->
-                    AccountRow(acc, onSwitch = { app?.switchAccount(acc.id) { com.notifyshare.ui.restartUiForAccountChange(context) } }, onRemove = { confirmRemove = acc })
+                    AccountRow(
+                        acc,
+                        onSwitch = {
+                            app?.switchAccount(acc.id) {
+                                com.notifyshare.ui.restartUiForAccountChange(context, "feed")
+                            }
+                        },
+                        onRemove = { confirmRemove = acc },
+                    )
                 }
             }
             if (password.isNotEmpty()) {
                 item { SectionLabel("Contas com senha") }
                 items(password, key = { it.id }) { acc ->
-                    AccountRow(acc, onSwitch = { app?.switchAccount(acc.id) { com.notifyshare.ui.restartUiForAccountChange(context) } }, onRemove = { confirmRemove = acc })
+                    AccountRow(
+                        acc,
+                        onSwitch = {
+                            app?.switchAccount(acc.id) {
+                                com.notifyshare.ui.restartUiForAccountChange(context, "feed")
+                            }
+                        },
+                        onRemove = { confirmRemove = acc },
+                    )
                 }
             }
 
@@ -100,18 +114,34 @@ fun AccountsScreen(
     }
 
     confirmRemove?.let { acc ->
+        val entrar = if (acc.google) "com o Google" else "com a senha"
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
             title = { Text("Remover @${acc.nickname}?") },
             text = {
                 Text(
-                    "A conta sai da lista deste aparelho. Você vai precisar entrar de novo " +
-                        (if (acc.google) "com o Google " else "com a senha ") +
-                        "para usá-la aqui outra vez. Nada é apagado no servidor.",
+                    if (acc.active) {
+                        "Você está usando esta conta agora. Ao remover, ela sai deste aparelho e " +
+                            "você volta para a tela de contas. Para usá-la aqui de novo é só entrar " +
+                            "$entrar. Nada é apagado no servidor."
+                    } else {
+                        "A conta sai da lista deste aparelho. Você vai precisar entrar de novo " +
+                            "$entrar para usá-la aqui outra vez. Nada é apagado no servidor."
+                    },
                 )
             },
             confirmButton = {
-                TextButton(onClick = { vm.remove(acc.id); confirmRemove = null }) {
+                TextButton(onClick = {
+                    val target = acc
+                    confirmRemove = null
+                    app?.removeAccount(target.id) { removedActive, stillLoggedIn ->
+                        if (removedActive) {
+                            com.notifyshare.ui.restartUiForAccountChange(
+                                context, if (stillLoggedIn) "accounts" else null,
+                            )
+                        }
+                    }
+                }) {
                     Text("Remover", color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -136,7 +166,17 @@ private fun AccountRow(acc: AccountInfo, onSwitch: () -> Unit, onRemove: () -> U
             Text(acc.email, style = MaterialTheme.typography.labelSmall, color = NotifyShareColors.muted)
         }
         if (acc.active) {
-            Text("Ativa", style = MaterialTheme.typography.labelMedium, color = NotifyShareColors.online)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    "Ativa",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NotifyShareColors.online,
+                )
+                TextButton(onClick = onRemove) { Text("Remover", color = NotifyShareColors.muted) }
+            }
         } else {
             TextButton(onClick = onRemove) { Text("Remover", color = NotifyShareColors.muted) }
         }

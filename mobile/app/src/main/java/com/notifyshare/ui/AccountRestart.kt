@@ -1,7 +1,9 @@
 package com.notifyshare.ui
 
 import android.content.Context
+import android.content.Intent
 import androidx.activity.ComponentActivity
+import com.notifyshare.MainActivity
 
 /**
  * Reinicia a UI depois de trocar de conta, adicionar conta ou sair.
@@ -17,8 +19,14 @@ import androidx.activity.ComponentActivity
  * scoped na Activity), e cancela os `viewModelScope` em andamento da conta
  * antiga.
  */
-fun restartUiForAccountChange(context: Context) {
+fun restartUiForAccountChange(context: Context, openTarget: String? = null) {
     val activity = context as? ComponentActivity ?: return
     activity.viewModelStore.clear()
+    // A Activity recriada le o mesmo Intent. Reescrevemos o alvo (ou apagamos um
+    // deep link antigo) para cair sempre na tela certa depois da troca de conta.
+    activity.intent = (activity.intent ?: Intent()).apply {
+        if (openTarget != null) putExtra(MainActivity.EXTRA_OPEN, openTarget)
+        else removeExtra(MainActivity.EXTRA_OPEN)
+    }
     activity.recreate()
 }

@@ -43,6 +43,7 @@ class SecurityConfig(
                 // e uma acao sobre a conta inteira, nao sobre um aparelho.
                 it.requestMatchers(
                     "/auth/register", "/auth/login", "/auth/google", "/auth/refresh", "/auth/logout",
+                    "/auth/forgot-password", "/auth/reset-password", "/auth/password-reset-info",
                 )
                     .permitAll()
                     .requestMatchers("/actuator/health", "/ping").permitAll()

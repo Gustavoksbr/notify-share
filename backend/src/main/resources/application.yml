@@ -46,6 +46,12 @@ server:
   forward-headers-strategy: framework
 
 notifyshare:
+  rate-limit:
+    # Janela por IP para as rotas de recuperacao de senha.
+    password-reset-window: ${PASSWORD_RESET_RATE_LIMIT_WINDOW:PT15M}
+    # Janela por IP para tentativas de login.
+    login-window: ${LOGIN_RATE_LIMIT_WINDOW:PT1M}
+
   jwt:
     # Trocar em qualquer ambiente que nao seja a sua maquina. Minimo 32 bytes para HS256.
     secret: ${JWT_SECRET:dev-somente-local-troque-este-segredo-de-32-bytes-ou-mais}
@@ -60,6 +66,26 @@ notifyshare:
     # ajustar aqui se sentir necessidade depois.
     login-max-attempts: ${LOGIN_MAX_ATTEMPTS:11}
     login-lockout-duration: ${LOGIN_LOCKOUT_DURATION:PT1M}
+
+    password-reset:
+      # Codigos errados (contados por IP, nao por e-mail — assim ninguem trava
+      # a recuperacao de outra pessoa) ate o bloqueio temporario, e a duracao.
+      max-attempts: ${PASSWORD_RESET_MAX_ATTEMPTS:5}
+      lockout-duration: ${PASSWORD_RESET_LOCKOUT_DURATION:PT5M}
+      # Validade do codigo no e-mail e intervalo minimo entre dois envios pro
+      # mesmo endereco (anti-flood de caixa de entrada).
+      code-ttl: ${PASSWORD_RESET_CODE_TTL:PT20M}
+      send-cooldown: ${PASSWORD_RESET_SEND_COOLDOWN:PT60S}
+      # Espelha o teto de POST /auth/forgot-password do RateLimitFilter, so para
+      # a tela conseguir explicar o limite. Mantenha igual ao filtro.
+      max-requests-per-window: ${PASSWORD_RESET_MAX_REQUESTS:4}
+
+  resend:
+    # Envio de e-mail transacional (https://resend.com). Vazio = desligado: o
+    # codigo de recuperacao vai pro log em vez de ser enviado (util em dev).
+    api-key: ${RESEND_API_KEY:}
+    # Remetente verificado no Resend, ex.: "Notify Share <nao-responda@seu-dominio.com>".
+    from: ${RESEND_EMAIL_FROM:}
 
   google:
     # Client ID "Web application" do Google Cloud. Vazio = login com Google off.

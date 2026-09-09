@@ -31,7 +31,21 @@ data class AuthUiState(
     val googleEmail: String? = null,
     val googleNickname: String = "",
     val pendingGoogleToken: String? = null,
+
+    // --- recuperacao de senha ---
+    val recoverStage: RecoverStage = RecoverStage.EMAIL,
+    val recoverEmail: String = "",
+    val recoverCode: String = "",
+    val recoverNewPassword: String = "",
+    val recoverBusy: Boolean = false,
+    val recoverDone: Boolean = false,
+    /** Limites da recuperacao (para a tela explicar antes do erro). */
+    val recoverInfo: com.notifyshare.data.remote.PasswordResetInfoDto? = null,
 ) {
+
+    val canRequestRecover: Boolean get() = recoverEmail.isNotBlank() && !recoverBusy
+    val canSubmitRecover: Boolean
+        get() = recoverCode.trim().length >= 4 && recoverNewPassword.length >= 8 && !recoverBusy
     val canSubmitLogin: Boolean
         get() = identifier.isNotBlank() && password.isNotBlank() && !loading
 
@@ -44,6 +58,8 @@ data class AuthUiState(
 
     val needsGoogleNickname: Boolean get() = pendingGoogleToken != null
 }
+
+enum class RecoverStage { EMAIL, CODE }
 
 class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
@@ -118,6 +134,65 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         it.copy(pendingGoogleToken = null, googleEmail = null, googleNickname = "", errorMessage = null)
     }
 
+    // --- recuperacao de senha -------------------------------------------
+
+    /** Busca os limites (quantos códigos, quanto bloqueia, qual janela) para a tela mostrar. */
+    fun loadRecoverInfo() {
+        if (_state.value.recoverInfo != null) return
+        viewModelScope.launch {
+            repository.passwordResetInfo()?.let { info -> _state.update { it.copy(recoverInfo = info) } }
+        }
+    }
+
+    fun onRecoverEmailChange(v: String) = clearErrorAnd { it.copy(recoverEmail = v.lowercase()) }
+    fun onRecoverCodeChange(v: String) = clearErrorAnd { it.copy(recoverCode = v.filter(Char::isDigit).take(6)) }
+    fun onRecoverNewPasswordChange(v: String) = clearErrorAnd { it.copy(recoverNewPassword = v) }
+
+    /** Pede o codigo. O backend responde 202 exista a conta ou nao, entao avancamos
+     *  para a tela do codigo de qualquer jeito — so nao avanca se a chamada falhou
+     *  por rede/limite. */
+    fun requestRecoverCode() {
+        if (_state.value.recoverBusy || _state.value.recoverEmail.isBlank()) return
+        _state.update { it.copy(recoverBusy = true, errorMessage = null, errorField = null) }
+        viewModelScope.launch {
+            when (val r = repository.forgotPassword(_state.value.recoverEmail.trim())) {
+                is ApiResult.Ok -> _state.update {
+                    it.copy(recoverBusy = false, recoverStage = RecoverStage.CODE)
+                }
+                is ApiResult.Failure -> _state.update {
+                    it.copy(recoverBusy = false, errorMessage = r.withAttemptsHint())
+                }
+            }
+        }
+    }
+
+    fun submitRecover() {
+        if (!_state.value.canSubmitRecover) return
+        _state.update { it.copy(recoverBusy = true, errorMessage = null, errorField = null) }
+        viewModelScope.launch {
+            val s = _state.value
+            when (val r = repository.resetPassword(s.recoverEmail.trim(), s.recoverCode.trim(), s.recoverNewPassword)) {
+                is ApiResult.Ok -> _state.update { it.copy(recoverBusy = false, recoverDone = true) }
+                is ApiResult.Failure -> _state.update {
+                    it.copy(
+                        recoverBusy = false,
+                        errorMessage = r.withAttemptsHint(),
+                        errorField = if (r.code == "weak_password") "password" else null,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Volta pro comeco do fluxo (ao abrir a tela ou ao sair). */
+    fun resetRecoverFlow() = _state.update {
+        it.copy(
+            recoverStage = RecoverStage.EMAIL, recoverEmail = "", recoverCode = "",
+            recoverNewPassword = "", recoverBusy = false, recoverDone = false,
+            errorMessage = null, errorField = null,
+        )
+    }
+
     /** Limpa o formulario ao trocar de tela, para a senha nao sobrar na memoria. */
     fun resetForm() {
         _state.value = AuthUiState()
@@ -150,6 +225,11 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
      * quando o backend já bloqueou (account_locked traz retryAfterSeconds).
      */
     private fun ApiResult.Failure.withAttemptsHint(): String {
+        // Recuperacao de senha e rate limit: o backend ja devolve a frase inteira
+        // (tempo restante, tentativas, duracao do bloqueio) — nao acrescenta nada.
+        if (code == "rate_limited" || code == "reset_locked" || code == "invalid_reset_code") {
+            return message
+        }
         retryAfterSeconds?.let { secs ->
             val mins = ((secs + 59) / 60).toInt()
             val quando = if (mins <= 1) "cerca de 1 minuto" else "cerca de $mins minutos"

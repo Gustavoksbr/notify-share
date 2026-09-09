@@ -176,9 +176,7 @@ private fun EmailNotice() {
             )
         }
         Text(
-            text = "Nesta versao o e-mail nao e verificado e voce nao recebe nenhuma " +
-                "mensagem. Ele serve para limitar uma conta por endereco. Ele nunca " +
-                "aparece para outras pessoas.",
+            text = "Você pode usar o seu email para recuperação de senha. Seu email não é compartilhado publicamente.",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

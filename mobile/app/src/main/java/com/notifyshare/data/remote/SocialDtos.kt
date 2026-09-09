@@ -120,6 +120,10 @@ data class RecipientAppRuleDto(
     val sharerMode: String = "content",
     val enabledBySharer: Boolean = true,
     val notify: Boolean = true,
+    /** o sharer libera todos os remetentes deste app? */
+    val allSenders: Boolean = true,
+    /** quando !allSenders: nomes dos contatos que o sharer escolheu liberar. */
+    val senders: List<String> = emptyList(),
 )
 
 @Serializable

@@ -33,6 +33,15 @@ interface NotifyShareApi {
     @POST("auth/logout")
     suspend fun logout(@Body body: LogoutRequest): Response<Unit>
 
+    @POST("auth/forgot-password")
+    suspend fun forgotPassword(@Body body: ForgotPasswordRequest): Response<Unit>
+
+    @POST("auth/reset-password")
+    suspend fun resetPassword(@Body body: ResetPasswordRequest): Response<Unit>
+
+    @GET("auth/password-reset-info")
+    suspend fun passwordResetInfo(): Response<PasswordResetInfoDto>
+
     @GET("me")
     suspend fun me(): Response<UserDto>
 

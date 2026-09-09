@@ -137,6 +137,7 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
     LaunchedEffect(openTarget) {
         when {
             openTarget == "feed" -> nav.navigate(Tab.Feed.route)
+            openTarget == "accounts" -> nav.navigate("accounts")
             openTarget == "grants" -> nav.navigate(Tab.Share.route)
             openTarget == "permissions" -> nav.navigate("permissions")
             openTarget?.startsWith("chat:") == true ->
@@ -301,7 +302,11 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     onDeleteHistory = {
                         container.feedRepository.deleteMyHistory() is com.notifyshare.data.ApiResult.Ok
                     },
-                    onAccountDeleted = { com.notifyshare.ui.restartUiForAccountChange(ctx) },
+                    onAccountDeleted = { stillLoggedIn ->
+                        com.notifyshare.ui.restartUiForAccountChange(
+                            ctx, if (stillLoggedIn) "accounts" else null,
+                        )
+                    },
                     onExport = { container.authRepository.exportData() },
                     onSaveExport = { text -> shareExport(ctx, text) },
                 )

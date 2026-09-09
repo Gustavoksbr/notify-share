@@ -3,14 +3,18 @@ package com.notifyshare.data
 import android.os.Build
 import com.notifyshare.data.local.SecureTokenStore
 import com.notifyshare.data.remote.GoogleLoginRequest
+import com.notifyshare.data.remote.ForgotPasswordRequest
 import com.notifyshare.data.remote.LoginRequest
+import com.notifyshare.data.remote.PasswordResetInfoDto
 import com.notifyshare.data.remote.LogoutRequest
+import com.notifyshare.data.remote.ResetPasswordRequest
 import com.notifyshare.data.remote.NetworkModule
 import com.notifyshare.data.remote.NotifyShareApi
 import com.notifyshare.data.remote.RegisterRequest
 import com.notifyshare.data.remote.TokenResponse
 import com.notifyshare.data.remote.UserDto
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 
 class AuthRepository(
@@ -47,6 +51,22 @@ class AuthRepository(
         apiCall(json) {
             api.googleLogin(GoogleLoginRequest(idToken, nickname, acceptedPrivacy, deviceLabel))
         }.alsoStoreTokens()
+
+    /** Pede o codigo de recuperacao. Sempre "Ok" no servidor (202) — nao revela se o e-mail existe. */
+    suspend fun forgotPassword(email: String): ApiResult<Unit> =
+        apiCall(json) { NetworkModule.bareApi().forgotPassword(ForgotPasswordRequest(email.trim().lowercase())) }
+
+    /** Redefine a senha com o codigo do e-mail. 401 invalid_reset_code / 429 reset_locked. */
+    suspend fun resetPassword(email: String, code: String, newPassword: String): ApiResult<Unit> =
+        apiCall(json) {
+            NetworkModule.bareApi().resetPassword(
+                ResetPasswordRequest(email.trim().lowercase(), code.trim(), newPassword),
+            )
+        }
+
+    /** Limites da recuperacao de senha, para a tela explica-los. null = usa os defaults locais. */
+    suspend fun passwordResetInfo(): PasswordResetInfoDto? =
+        (apiCall(json) { NetworkModule.bareApi().passwordResetInfo() } as? ApiResult.Ok)?.value
 
     suspend fun me(): ApiResult<UserDto> = apiCall(json) { api.me() }
 
@@ -97,4 +117,10 @@ class AuthRepository(
     suspend fun switchAccount(id: String) = tokenStore.switchTo(id)
 
     suspend fun removeAccount(id: String) = tokenStore.removeAccount(id)
+
+    /** Id da conta ativa agora (leitura unica). */
+    suspend fun activeAccountId(): String? = tokenStore.activeId()
+
+    /** Ainda ha alguma conta neste aparelho? */
+    suspend fun hasAnyAccount(): Boolean = accounts.first().isNotEmpty()
 }

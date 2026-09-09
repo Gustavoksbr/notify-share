@@ -36,6 +36,24 @@ data class GoogleLoginRequest(
 data class LogoutRequest(val refreshToken: String)
 
 @Serializable
+data class ForgotPasswordRequest(val email: String)
+
+@Serializable
+data class ResetPasswordRequest(val email: String, val code: String, val newPassword: String)
+
+/** Limites da recuperacao de senha (GET /auth/password-reset-info). Defaults =
+ *  os padroes do backend, usados enquanto a chamada nao volta. */
+@Serializable
+data class PasswordResetInfoDto(
+    val maxCodeAttempts: Int = 5,
+    val lockoutMinutes: Int = 5,
+    val maxRequests: Int = 4,
+    val requestWindowMinutes: Int = 15,
+    val codeTtlMinutes: Int = 20,
+    val resendCooldownSeconds: Int = 60,
+)
+
+@Serializable
 data class UserDto(
     val id: String,
     val nickname: String,

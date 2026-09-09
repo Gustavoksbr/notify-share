@@ -74,6 +74,21 @@ class RecipientRulesViewModel(
     }
 }
 
+/**
+ * "De quais contatos daquele app eu recebo", do lado de quem recebe. So aparece
+ * para apps que tem a nocao de remetente (WhatsApp etc. — ver AppCapabilities).
+ */
+@Composable
+internal fun RecipientSendersLine(rule: RecipientAppRuleDto) {
+    if (!com.notifyshare.notify.AppCapabilities.of(rule.packageName).supportsSenders) return
+    val text = when {
+        rule.allSenders -> "Todos os contatos"
+        rule.senders.isEmpty() -> "Só alguns contatos"
+        else -> "Esses contatos: " + rule.senders.joinToString(", ")
+    }
+    Text(text, style = MaterialTheme.typography.labelSmall, color = NotifyShareColors.muted)
+}
+
 @Composable
 fun RecipientRulesScreen(vm: RecipientRulesViewModel, nickname: String, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -115,6 +130,7 @@ fun RecipientRulesScreen(vm: RecipientRulesViewModel, nickname: String, onBack: 
                                 style = MaterialTheme.typography.labelSmall,
                                 color = NotifyShareColors.muted,
                             )
+                            RecipientSendersLine(rule)
                         }
                         Switch(
                             checked = rule.notify,

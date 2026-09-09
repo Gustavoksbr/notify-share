@@ -38,7 +38,7 @@ fun DangerZoneScreen(
     vm: ProfileViewModel,
     onBack: () -> Unit,
     onDeleteHistory: suspend () -> Boolean,
-    onAccountDeleted: () -> Unit,
+    onAccountDeleted: (stillLoggedIn: Boolean) -> Unit,
     onExport: (suspend () -> String?)? = null,
     onSaveExport: (String) -> Unit = {},
 ) {

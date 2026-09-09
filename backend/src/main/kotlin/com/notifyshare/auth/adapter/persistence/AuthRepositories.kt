@@ -1,5 +1,6 @@
 package com.notifyshare.auth.adapter.persistence
 
+import com.notifyshare.auth.domain.PasswordResetToken
 import com.notifyshare.auth.domain.RefreshToken
 import com.notifyshare.auth.domain.User
 import org.springframework.data.jpa.repository.JpaRepository
@@ -60,4 +61,18 @@ interface RefreshTokenRepository : JpaRepository<RefreshToken, UUID> {
         """
     )
     fun revokeAllForUser(@Param("userId") userId: UUID, @Param("now") now: Instant): Int
+}
+
+interface PasswordResetTokenRepository : JpaRepository<PasswordResetToken, UUID> {
+
+    /** Tokens ainda utilizaveis de um usuario, do mais novo pro mais antigo. */
+    fun findAllByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(userId: UUID): List<PasswordResetToken>
+
+    @Modifying
+    @Query("update PasswordResetToken t set t.consumedAt = :now where t.userId = :userId and t.consumedAt is null")
+    fun consumeAllForUser(@Param("userId") userId: UUID, @Param("now") now: Instant): Int
+
+    @Modifying
+    @Query("delete from PasswordResetToken t where t.expiresAt < :cutoff")
+    fun deleteExpired(@Param("cutoff") cutoff: Instant): Int
 }

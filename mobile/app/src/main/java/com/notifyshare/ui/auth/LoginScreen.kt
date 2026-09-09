@@ -23,12 +23,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.notifyshare.ui.theme.NotifyShareColors
 
 @Composable
 fun LoginScreen(
     viewModel: AuthViewModel,
     onGoToRegister: () -> Unit,
+    onForgotPassword: () -> Unit,
     modifier: Modifier = Modifier,
     onCancel: (() -> Unit)? = null,
 ) {
@@ -104,6 +104,13 @@ fun LoginScreen(
                 loading = state.loading,
             )
 
+            TextButton(
+                onClick = onForgotPassword,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Esqueci minha senha", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
             Text(
                 "ou",
                 style = MaterialTheme.typography.labelMedium,
@@ -127,16 +134,7 @@ fun LoginScreen(
 
         GoogleNicknameDialog(viewModel)
 
-        Spacer(Modifier.height(32.dp))
-
-        Text(
-            text = "A recuperacao de senha ainda nao esta disponivel nesta versao. " +
-                "Guarde sua senha em um gerenciador.",
-            style = MaterialTheme.typography.labelMedium,
-            color = NotifyShareColors.muted,
-        )
-
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(48.dp))
     }
 }
 

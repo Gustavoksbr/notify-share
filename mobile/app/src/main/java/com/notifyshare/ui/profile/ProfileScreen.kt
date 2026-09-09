@@ -112,8 +112,11 @@ class ProfileViewModel(
         }
     }
 
-    /** Exclui a conta no servidor e depois limpa a sessao local. */
-    fun deleteAccount(then: () -> Unit) = viewModelScope.launch {
+    /**
+     * Exclui a conta no servidor e depois limpa a sessao local. `then` recebe se
+     * ainda ha OUTRA conta neste aparelho (para cair na tela de contas em vez do login).
+     */
+    fun deleteAccount(then: (stillLoggedIn: Boolean) -> Unit) = viewModelScope.launch {
         _state.value = _state.value.copy(deleting = true)
         val r = auth.deleteAccount()
         _state.value = _state.value.copy(deleting = false)
@@ -121,7 +124,7 @@ class ProfileViewModel(
             session.clear()
             cache.clear()
             auth.logout()
-            then()
+            then(auth.hasAnyAccount())
         }
     }
 }

@@ -354,8 +354,9 @@ internal fun RuleCard(
                         com.notifyshare.notify.SenderPickerType.CONTACTS_AND_TEXT -> {
                             ContactPickerLink(onOpenContactPicker)
                             Text(
-                                "Conta comercial ou contato recém-salvo? Digite o nome exatamente como " +
-                                    "aparece na notificação.",
+                                "OBS: só funciona se o nome marcado aqui for exatamente o texto que aparece na sua notificação. " +
+                                    "Em algumas situações — contas comerciais, contatos recém-salvos — o WhatsApp mostra um texto diferente, " +
+                                    "e aí o remetente não é reconhecido.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = NotifyShareColors.muted,
                             )
@@ -379,7 +380,7 @@ internal fun RuleCard(
 @Composable
 private fun ContactPickerLink(onClick: () -> Unit) {
     Text(
-        "Escolher contato",
+        "Escolher da lista de contato",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.clickable(onClick = onClick).padding(vertical = 6.dp),
