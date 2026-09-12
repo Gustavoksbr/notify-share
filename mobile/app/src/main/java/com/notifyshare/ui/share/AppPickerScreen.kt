@@ -74,12 +74,26 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, ti
 
     val labelByPkg = remember(apps) { apps.associate { it.packageName to it.label } }
 
-    val recentEntries = remember(recent, alreadyAdded, labelByPkg) {
-        recent.filter { it.packageName !in alreadyAdded && it.packageName in labelByPkg }
-            .map { it to AppEntry(it.packageName, labelByPkg[it.packageName] ?: it.packageName) }
-    }
     val systemEntries = remember(alreadyAdded) { SYNTHETIC.filter { it.packageName !in alreadyAdded } }
-    val allEntries = remember(apps, alreadyAdded) { apps.filter { it.packageName !in alreadyAdded } }
+
+    // Apps que deixam escolher remetente (WhatsApp etc. — ver AppCapabilities):
+    // ganham secao propria, logo abaixo de "Meu celular", em destaque.
+    val manageableEntries = remember(apps, alreadyAdded) {
+        apps.filter {
+            it.packageName !in alreadyAdded &&
+                com.notifyshare.notify.AppCapabilities.of(it.packageName).supportsSenders
+        }
+    }
+    val manageablePkgs = remember(manageableEntries) { manageableEntries.map { it.packageName }.toSet() }
+
+    val recentEntries = remember(recent, alreadyAdded, labelByPkg, manageablePkgs) {
+        recent.filter {
+            it.packageName !in alreadyAdded && it.packageName in labelByPkg && it.packageName !in manageablePkgs
+        }.map { it to AppEntry(it.packageName, labelByPkg[it.packageName] ?: it.packageName) }
+    }
+    val allEntries = remember(apps, alreadyAdded, manageablePkgs) {
+        apps.filter { it.packageName !in alreadyAdded && it.packageName !in manageablePkgs }
+    }
 
     val matchesQuery = { e: AppEntry -> query.isBlank() || e.label.contains(query, ignoreCase = true) }
 
@@ -131,6 +145,20 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, ti
         }
 
         LazyColumn {
+            val sysShown = systemEntries.filter { matchesQuery(it) }
+            if (sysShown.isNotEmpty()) {
+                item { SectionLabel("Sistema") }
+                items(sysShown, key = { "s_${it.packageName}" }) { e -> AppRow(e) { add(e) } }
+            }
+
+            val manageableShown = manageableEntries.filter { matchesQuery(it) }
+            if (manageableShown.isNotEmpty()) {
+                item { SectionLabel("Apps com remetente") }
+                items(manageableShown, key = { "m_${it.packageName}" }) { e ->
+                    AppRow(e, subtitle = "Dá para escolher de quem receber") { add(e) }
+                }
+            }
+
             val recentShown = recentEntries.filter { matchesQuery(it.second) }
             if (recentShown.isNotEmpty()) {
                 item { SectionLabel("Notificaram você nos últimos 7 dias") }
@@ -139,12 +167,6 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, ti
                         add(entry)
                     }
                 }
-            }
-
-            val sysShown = systemEntries.filter { matchesQuery(it) }
-            if (sysShown.isNotEmpty()) {
-                item { SectionLabel("Sistema") }
-                items(sysShown, key = { "s_${it.packageName}" }) { e -> AppRow(e) { add(e) } }
             }
 
             val allShown = allEntries.filter { matchesQuery(it) }

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +53,7 @@ fun VaultTimelineScreen(container: AppContainer, onOpenRules: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var confirmDelete by remember { mutableStateOf<VaultItem?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
+    var detailOf by remember { mutableStateOf<VaultItem?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle(
@@ -95,7 +98,7 @@ fun VaultTimelineScreen(container: AppContainer, onOpenRules: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(items, key = { it.id }) { item ->
-                VaultRow(item, onDelete = { confirmDelete = item })
+                VaultRow(item, onDelete = { confirmDelete = item }, onOpenDetail = { detailOf = item })
             }
             item {
                 Text(
@@ -125,6 +128,10 @@ fun VaultTimelineScreen(container: AppContainer, onOpenRules: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancelar") } },
         )
+    }
+
+    detailOf?.let { item ->
+        VaultDetailSheet(item = item, onDismiss = { detailOf = null })
     }
 
     if (confirmClear) {
@@ -166,7 +173,7 @@ private fun buildVaultExport(items: List<VaultItem>): String = buildString {
 }
 
 @Composable
-private fun VaultRow(item: VaultItem, onDelete: () -> Unit) {
+private fun VaultRow(item: VaultItem, onDelete: () -> Unit, onOpenDetail: () -> Unit) {
     Row(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -194,11 +201,30 @@ private fun VaultRow(item: VaultItem, onDelete: () -> Unit) {
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                shortTime(item.occurredAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = NotifyShareColors.muted,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) {
+                Text(
+                    shortTime(item.occurredAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NotifyShareColors.muted,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable(onClick = onOpenDetail).padding(vertical = 2.dp),
+                ) {
+                    Icon(
+                        NotifyIcons.MoreVertical,
+                        contentDescription = null,
+                        tint = NotifyShareColors.muted,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
+                    Text("mais detalhes", style = MaterialTheme.typography.labelSmall, color = NotifyShareColors.muted)
+                }
+            }
         }
         Icon(
             NotifyIcons.Close,
@@ -206,5 +232,67 @@ private fun VaultRow(item: VaultItem, onDelete: () -> Unit) {
             tint = NotifyShareColors.muted,
             modifier = Modifier.clickable(onClick = onDelete).padding(4.dp),
         )
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun VaultDetailSheet(item: VaultItem, onDismiss: () -> Unit) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(bottom = 12.dp),
+            ) {
+                AppIcon(item.packageName, size = 40.dp)
+                Column {
+                    Text(
+                        item.group ?: friendlyPackage(item.packageName),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        com.notifyshare.ui.common.appLabel(item.packageName),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = NotifyShareColors.muted,
+                    )
+                }
+            }
+
+            DetailLine("Tipo", if (item.eventType == "system") "Alerta do sistema" else "Mensagem")
+            item.group?.let { DetailLine("Grupo", it) }
+            item.sender?.let { DetailLine("Remetente", it) }
+            DetailLine("Quando aconteceu", fullDateTime(item.occurredAt))
+            DetailLine("Guardado em", fullDateTime(item.savedAt))
+            DetailLine(
+                "Conteúdo guardado",
+                if (item.mode == "sender_only") "Só o remetente (sem texto)" else "Texto completo",
+            )
+            if (!item.title.isNullOrBlank() && item.title != item.body) {
+                DetailLine("Título original", item.title)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = NotifyShareColors.muted,
+            modifier = Modifier.width(150.dp),
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
 }

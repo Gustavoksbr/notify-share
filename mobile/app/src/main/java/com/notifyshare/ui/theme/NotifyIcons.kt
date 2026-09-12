@@ -135,6 +135,29 @@ object NotifyIcons {
         )
     }
 
+    /** Tres pontinhos verticais — abre "mais detalhes". Cada ponto e um segmento
+     *  de comprimento zero com ponta arredondada, o jeito simples de desenhar
+     *  um circulo preenchido com o mesmo helper de trato usado nos outros. */
+    val MoreVertical: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "MoreVertical",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            listOf(5f, 12f, 19f).forEach { y ->
+                addPath(
+                    pathData = addPathNodes("M12 ${y}L12 $y"),
+                    stroke = SolidColor(Color.White),
+                    strokeLineWidth = 3.2f,
+                    strokeLineCap = StrokeCap.Round,
+                    strokeLineJoin = StrokeJoin.Round,
+                )
+            }
+        }.build()
+    }
+
     val Bookmark: ImageVector by lazy {
         strokeIcon(name = "Bookmark", "M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z")
     }

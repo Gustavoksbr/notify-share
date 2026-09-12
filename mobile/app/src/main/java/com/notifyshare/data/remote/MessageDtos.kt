@@ -31,7 +31,7 @@ data class TimelineItemDto(
     val mine: Boolean,
     val body: String? = null,
     val readAt: String? = null,
-    /** so em audit: offered | activated | paused | resumed | revoked | rules_changed */
+    /** so em audit: offered | activated | paused | resumed | revoked */
     val action: String? = null,
     val edited: Boolean = false,
     val deleted: Boolean = false,

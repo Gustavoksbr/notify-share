@@ -308,7 +308,6 @@ private fun Item(row: FeedItemDto, highlighted: Boolean, onClick: () -> Unit, on
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .background(bg, RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
             .padding(13.dp),
     ) {
         Row(
@@ -350,12 +349,26 @@ private fun Item(row: FeedItemDto, highlighted: Boolean, onClick: () -> Unit, on
             }
         }
         
-        if (onReply != null) {
-            Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
+        Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Row(
-                horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                modifier = Modifier.clickable(onClick = onClick).padding(vertical = 4.dp),
             ) {
+                androidx.compose.material3.Icon(
+                    com.notifyshare.ui.theme.NotifyIcons.MoreVertical,
+                    contentDescription = null,
+                    tint = NotifyShareColors.muted,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("mais detalhes", style = MaterialTheme.typography.labelMedium, color = NotifyShareColors.muted)
+            }
+            if (onReply != null) {
                 androidx.compose.material3.TextButton(
                     onClick = onReply,
                     modifier = Modifier.padding(0.dp),

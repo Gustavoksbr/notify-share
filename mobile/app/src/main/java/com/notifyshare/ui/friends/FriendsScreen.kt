@@ -654,7 +654,11 @@ private fun FriendRow(
     ) {
         Avatar(f.nickname, size = 40, online = f.online, modifier = Modifier.clickable(onClick = onAvatar))
         Column(Modifier.weight(1f)) {
-            Text("@${f.nickname}", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "@${f.nickname}",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.clickable(onClick = onAvatar),
+            )
             Text(
                 if (f.online) "Online" else "Offline",
                 style = MaterialTheme.typography.labelSmall,

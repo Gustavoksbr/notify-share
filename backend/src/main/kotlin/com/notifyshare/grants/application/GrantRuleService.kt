@@ -1,11 +1,9 @@
 package com.notifyshare.grants.application
 
-import com.notifyshare.grants.adapter.persistence.GrantAuditRepository
 import com.notifyshare.grants.adapter.persistence.GrantRepository
 import com.notifyshare.grants.adapter.persistence.GrantRuleRepository
 import com.notifyshare.grants.adapter.persistence.GrantRuleSenderRepository
 import com.notifyshare.grants.domain.Grant
-import com.notifyshare.grants.domain.GrantAudit
 import com.notifyshare.grants.domain.GrantRule
 import com.notifyshare.grants.domain.GrantRuleSender
 import com.notifyshare.push.application.PushMessage
@@ -48,7 +46,6 @@ class GrantRuleService(
     private val grants: GrantRepository,
     private val rules: GrantRuleRepository,
     private val ruleSenders: GrantRuleSenderRepository,
-    private val audits: GrantAuditRepository,
     private val pushNotifier: PushNotifier,
 ) {
 
@@ -102,15 +99,10 @@ class GrantRuleService(
                 }
             }
         }
-        audits.save(
-            GrantAudit(
-                grantId = grantId,
-                actorId = userId,
-                action = GrantAudit.RULES_CHANGED,
-                detail = auditDetail(inputs),
-            )
-        )
-        // os dois lados releem na hora (contagem de apps, "notifica / so feed")
+        // Sem mais audit de "regras atualizadas" na conversa — com o autosave do
+        // app (uma edicao qualquer salva sozinha, debounced), isso viraria uma
+        // mensagem a cada toque. Os dois lados ainda releem a contagem de apps
+        // etc. na hora, so que via push, nao via linha na conversa.
         val frame = PushMessage(
             type = "grant",
             data = mapOf("grantId" to grantId.toString(), "action" to "rules_changed"),
@@ -119,13 +111,6 @@ class GrantRuleService(
         pushNotifier.notifyUser(grant.recipientId, frame)
         return toViews(rules.findAllByGrantId(grantId))
     }
-
-    /** "WhatsApp, Bateria" — os apps ligados, para a linha na conversa. */
-    private fun auditDetail(inputs: List<RuleInput>): String? =
-        inputs.filter { it.enabled && it.contentMode != GrantRule.PAUSED }
-            .joinToString(", ") { it.packageName.substringAfterLast('.').substringAfter(':') }
-            .take(200)
-            .ifBlank { null }
 
     private fun load(grantId: UUID): Grant =
         grants.findById(grantId).orElseThrow { NotFoundException("grant_not_found", "Compartilhamento nao encontrado") }

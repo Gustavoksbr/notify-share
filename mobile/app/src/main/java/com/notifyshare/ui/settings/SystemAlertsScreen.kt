@@ -1,22 +1,27 @@
 package com.notifyshare.ui.settings
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notifyshare.AppContainer
@@ -57,7 +62,7 @@ fun SystemAlertsScreen(container: AppContainer, onBack: () -> Unit) {
                 cfg.batteryLow,
             ) { on -> edit { it.copy(batteryLow = on) } }
             if (cfg.batteryLow) {
-                PctRow("Avisar em", cfg.batteryLowPct, 5..40, 5) { v ->
+                PctRow("Avisar em", cfg.batteryLowPct) { v ->
                     edit { it.copy(batteryLowPct = v) }
                 }
             }
@@ -68,7 +73,7 @@ fun SystemAlertsScreen(container: AppContainer, onBack: () -> Unit) {
                 cfg.batteryHigh,
             ) { on -> edit { it.copy(batteryHigh = on) } }
             if (cfg.batteryHigh) {
-                PctRow("Avisar em", cfg.batteryHighPct, 50..100, 5) { v ->
+                PctRow("Avisar em", cfg.batteryHighPct) { v ->
                     edit { it.copy(batteryHighPct = v) }
                 }
             }
@@ -114,29 +119,30 @@ private fun ToggleRow(
     }
 }
 
+/** Campo livre de 1 a 99% — o usuário digita o número em vez de +/−. */
 @Composable
-private fun PctRow(label: String, value: Int, range: IntRange, step: Int, onChange: (Int) -> Unit) {
+private fun PctRow(label: String, value: Int, onChange: (Int) -> Unit) {
+    // Espelha o valor salvo, mas deixa o usuário passar por estados
+    // intermediários ("" ou "0" enquanto digita "10") sem forçar de volta.
+    var text by remember(value) { mutableStateOf(value.toString()) }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxWidth().padding(start = 34.dp, end = 22.dp, bottom = 10.dp),
     ) {
-        Text("$label $value%", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Stepper("−") { onChange((value - step).coerceIn(range.first, range.last)) }
-        Stepper("+") { onChange((value + step).coerceIn(range.first, range.last)) }
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        OutlinedTextField(
+            value = text,
+            onValueChange = { input ->
+                val digits = input.filter(Char::isDigit).take(2)
+                text = digits
+                digits.toIntOrNull()?.takeIf { it in 1..99 }?.let(onChange)
+            },
+            suffix = { Text("%") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.width(90.dp),
+        )
     }
-}
-
-@Composable
-private fun Stepper(symbol: String, onClick: () -> Unit) {
-    Text(
-        symbol,
-        style = MaterialTheme.typography.titleLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .size(36.dp)
-            .clickable(onClick = onClick)
-            .padding(4.dp),
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-    )
 }

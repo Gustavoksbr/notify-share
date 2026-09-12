@@ -43,6 +43,8 @@ import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.format.friendlyPackage
 import com.notifyshare.ui.theme.NotifyIcons
 import com.notifyshare.ui.theme.NotifyShareColors
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,7 +53,8 @@ import kotlinx.coroutines.launch
 data class RulesUiState(
     val loading: Boolean = true,
     val rules: List<RuleDto> = emptyList(),
-    val dirty: Boolean = false,
+    /** true entre uma edição e ela ficar de fato salva (inclui a espera do
+     *  autosave e a chamada de rede em si). */
     val saving: Boolean = false,
     val error: String? = null,
     val savedAt: Long = 0,
@@ -62,6 +65,13 @@ data class RulesUiState(
     val copyBusy: Boolean = false,
 )
 
+/**
+ * As regras salvam sozinhas: toda edição agenda um save (debounced, para não
+ * disparar uma chamada a cada toque numa sequência rápida) em vez de esperar
+ * um botão "Salvar". Como o `replace()` do backend manda a lista inteira toda
+ * vez, um save cancelado no meio (por uma edição mais nova) se autocorrige no
+ * próximo — nunca fica um estado parcial salvo.
+ */
 class RulesViewModel(
     private val backend: RulesBackend,
 ) : ViewModel() {
@@ -69,13 +79,15 @@ class RulesViewModel(
     private val _state = MutableStateFlow(RulesUiState())
     val state: StateFlow<RulesUiState> = _state.asStateFlow()
 
+    private var saveJob: Job? = null
+
     init {
         load()
     }
 
-    /** Puxar para recarregar: ignora se ha edicoes nao salvas, para nao perde-las. */
+    /** Puxar para recarregar: ignora se há um autosave pendente, para não perdê-lo. */
     fun refresh() {
-        if (_state.value.dirty || !backend.supportsRefresh) return
+        if (_state.value.saving || !backend.supportsRefresh) return
         com.notifyshare.core.Connectivity.probeBeforeRefresh()
         _state.value = _state.value.copy(refreshing = true)
         load(silent = true)
@@ -95,8 +107,8 @@ class RulesViewModel(
     private fun mutate(pkg: String, block: (RuleDto) -> RuleDto) {
         _state.value = _state.value.copy(
             rules = _state.value.rules.map { if (it.packageName == pkg) block(it) else it },
-            dirty = true,
         )
+        scheduleSave()
     }
 
     fun toggleEnabled(pkg: String) = mutate(pkg) { it.copy(enabled = !it.enabled) }
@@ -112,18 +124,14 @@ class RulesViewModel(
         it.copy(textFilters = it.textFilters.filterNot { f -> f == term })
     }
     fun removeApp(pkg: String) {
-        _state.value = _state.value.copy(
-            rules = _state.value.rules.filterNot { it.packageName == pkg },
-            dirty = true,
-        )
+        _state.value = _state.value.copy(rules = _state.value.rules.filterNot { it.packageName == pkg })
+        scheduleSave()
     }
 
     fun addApp(pkg: String) {
         if (_state.value.rules.any { it.packageName == pkg }) return
-        _state.value = _state.value.copy(
-            rules = _state.value.rules + RuleDto(packageName = pkg),
-            dirty = true,
-        )
+        _state.value = _state.value.copy(rules = _state.value.rules + RuleDto(packageName = pkg))
+        scheduleSave()
     }
 
     fun toggleSender(pkg: String, hash: String, label: String?) = mutate(pkg) { rule ->
@@ -189,19 +197,25 @@ class RulesViewModel(
         _state.value = _state.value.copy(copyBusy = true)
         viewModelScope.launch {
             val newRules = block()
-            _state.value =
-                if (newRules == null) _state.value.copy(copyBusy = false, error = "Não foi possível copiar.")
-                else _state.value.copy(rules = newRules, dirty = true, copyBusy = false)
+            if (newRules == null) {
+                _state.value = _state.value.copy(copyBusy = false, error = "Não foi possível copiar.")
+            } else {
+                _state.value = _state.value.copy(rules = newRules, copyBusy = false)
+                scheduleSave()
+            }
         }
     }
 
-    fun save() {
-        _state.value = _state.value.copy(saving = true)
-        viewModelScope.launch {
+    /** Autosave debounced: cada edição cancela o save pendente e agenda outro. */
+    private fun scheduleSave() {
+        _state.value = _state.value.copy(saving = true, error = null)
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            delay(SAVE_DEBOUNCE_MS)
             when (val r = backend.save(_state.value.rules)) {
                 is ApiResult.Ok -> {
-                    _state.value = RulesUiState(
-                        loading = false, rules = r.value, dirty = false,
+                    _state.value = _state.value.copy(
+                        rules = r.value, saving = false, error = null,
                         savedAt = System.currentTimeMillis(),
                     )
                     backend.onSaved()
@@ -209,6 +223,15 @@ class RulesViewModel(
                 is ApiResult.Failure -> _state.value = _state.value.copy(saving = false, error = r.message)
             }
         }
+    }
+
+    /** Botão "tentar de novo" depois de uma falha de autosave. */
+    fun retrySave() {
+        if (_state.value.error != null) scheduleSave()
+    }
+
+    private companion object {
+        const val SAVE_DEBOUNCE_MS = 500L
     }
 }
 
@@ -288,7 +311,7 @@ fun RulesScreen(
             }
         }
 
-        SaveRulesButton(dirty = state.dirty, saving = state.saving, onSave = vm::save)
+        SaveStatusLine(saving = state.saving, error = state.error, onRetry = vm::retrySave)
     }
 
     copyTarget?.let { target ->
@@ -320,45 +343,45 @@ fun RulesScreen(
     }
 }
 
-/** Sempre visivel; cinza + "nada para salvar" quando nao ha mudanca pendente. */
+/**
+ * As regras salvam sozinhas (ver RulesViewModel.scheduleSave) — aqui só um
+ * status discreto: nada visível quando está tudo salvo, "Salvando…" durante o
+ * autosave, e um aviso com "Tentar de novo" se a chamada falhar.
+ */
 @Composable
-internal fun SaveRulesButton(dirty: Boolean, saving: Boolean, onSave: () -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        androidx.compose.foundation.layout.Box(
-            contentAlignment = androidx.compose.ui.Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    if (dirty) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    RoundedCornerShape(26.dp),
+internal fun SaveStatusLine(saving: Boolean, error: String?, onRetry: () -> Unit) {
+    if (!saving && error == null) return
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        when {
+            error != null -> {
+                Text(
+                    "Não foi possível salvar. $error",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
                 )
-                .clickable(enabled = dirty && !saving, onClick = onSave)
-                .padding(vertical = 16.dp),
-        ) {
-            Text(
-                "Salvar regras",
-                style = MaterialTheme.typography.labelLarge,
-                color = if (dirty) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.alpha(if (saving) 0f else 1f),
-            )
-            if (saving) {
-                androidx.compose.material3.CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                Text(
+                    "Tentar de novo",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClick = onRetry),
                 )
             }
-        }
-        if (!dirty && !saving) {
-            Text(
-                "nada para salvar",
-                style = MaterialTheme.typography.labelSmall,
-                color = NotifyShareColors.muted,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-            )
+            saving -> {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = NotifyShareColors.muted,
+                )
+                Text("Salvando…", style = MaterialTheme.typography.labelMedium, color = NotifyShareColors.muted)
+            }
         }
     }
 }

@@ -47,6 +47,11 @@ class ShareForegroundService : Service() {
     private var lowArmed = true
     private var highArmed = true
 
+    // Ultima leitura crua de bateria e de "plugado", para confirmar/derivar
+    // (ver onBatteryChanged).
+    private var lastRawPct: Int? = null
+    private var lastPlugged: Boolean? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -96,27 +101,53 @@ class ShareForegroundService : Service() {
     private fun registerBattery() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                when (intent.action) {
-                    Intent.ACTION_BATTERY_CHANGED -> onBatteryChanged(intent)
-                    Intent.ACTION_POWER_CONNECTED -> onCharging(true)
-                    Intent.ACTION_POWER_DISCONNECTED -> onCharging(false)
-                }
+                if (intent.action == Intent.ACTION_BATTERY_CHANGED) onBatteryChanged(intent)
             }
         }
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_BATTERY_CHANGED)
-            addAction(Intent.ACTION_POWER_CONNECTED)
-            addAction(Intent.ACTION_POWER_DISCONNECTED)
-        }
+        // So ACTION_BATTERY_CHANGED: e sticky (sempre chega, mesmo registrando
+        // agora) e carrega tanto o nivel quanto o "plugado" (EXTRA_PLUGGED).
+        // Os broadcasts dedicados POWER_CONNECTED/POWER_DISCONNECTED foram
+        // removidos daqui de proposito — em alguns fabricantes (MIUI e afins)
+        // eles simplesmente nao chegam num receiver registrado em segundo
+        // plano, e era por isso que "carregador conectou/desconectou" nunca
+        // avisava. O BATTERY_CHANGED e mais confiavel e ja tem o que precisamos.
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         batteryReceiver = receiver
     }
 
     private fun onBatteryChanged(intent: Intent) {
+        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
+        if (plugged >= 0) {
+            val nowPlugged = plugged != 0
+            val prevPlugged = lastPlugged
+            lastPlugged = nowPlugged
+            if (prevPlugged != null && prevPlugged != nowPlugged) {
+                scope.launch {
+                    val app = application as? NotifyShareApp ?: return@launch
+                    if (!app.container.systemAlerts.current().charging) return@launch
+                    emit(
+                        if (nowPlugged) "charge-on" else "charge-off",
+                        if (nowPlugged) "Começou a carregar" else "Parou de carregar",
+                    )
+                }
+            }
+        }
+
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
         if (level < 0 || scale <= 0) return
         val pct = (level * 100) / scale
+
+        // Confirma a leitura antes de usar pra alertas: alguns aparelhos mandam
+        // uma leitura de bateria fora do lugar bem no instante em que o
+        // carregador conecta/desconecta (foi o que bugou o alerta de bateria
+        // baixa — 76% virando "34%" no mesmo minuto). So age quando a leitura
+        // nao pula mais que JUMP_LIMIT em relacao a anterior; um salto grande
+        // isolado e descartado.
+        val prevRaw = lastRawPct
+        lastRawPct = pct
+        if (prevRaw != null && kotlin.math.abs(pct - prevRaw) > JUMP_LIMIT) return
 
         scope.launch {
             val app = application as? NotifyShareApp ?: return@launch
@@ -165,17 +196,6 @@ class ShareForegroundService : Service() {
         )
     }
 
-    private fun onCharging(connected: Boolean) {
-        scope.launch {
-            val app = application as? NotifyShareApp ?: return@launch
-            if (!app.container.systemAlerts.current().charging) return@launch
-            emit(
-                if (connected) "charge-on" else "charge-off",
-                if (connected) "Começou a carregar" else "Parou de carregar",
-            )
-        }
-    }
-
     /**
      * Cofre local: sempre (se a regra de "Meu celular" capturar). Servidor: so
      * com compartilhamento ativo. dedupKey em janela de 30 min para o "armed"
@@ -221,6 +241,10 @@ class ShareForegroundService : Service() {
         private const val NOTIF_ID = 42
         private const val EXTRA_COUNT = "count"
         private const val REARM_GAP = 5
+
+        /** Leitura de bateria que pula mais que isto de uma vez e descartada
+         *  (provavel glitch do sensor, comum ao plugar/desplugar o carregador). */
+        private const val JUMP_LIMIT = 12
 
         fun start(context: Context, peopleCount: Int = 0) {
             ContextCompat.startForegroundService(

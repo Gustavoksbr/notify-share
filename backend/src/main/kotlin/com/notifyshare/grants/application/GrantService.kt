@@ -149,17 +149,17 @@ class GrantService(
     @Transactional
     fun clearBetween(userA: UUID, userB: UUID): Int = grants.deleteAllBetween(userA, userB)
 
-    /** Chamado pelo GrantRuleService quando as regras mudam. */
-    @Transactional
-    fun recordRulesChanged(grantId: UUID, actorId: UUID, detail: String?) {
-        audits.save(GrantAudit(grantId = grantId, actorId = actorId, action = GrantAudit.RULES_CHANGED, detail = detail))
-    }
-
+    /**
+     * Historico de auditoria da conversa. Sem "regras atualizadas" — com o
+     * autosave (uma edicao qualquer salva sozinha) isso viraria uma mensagem a
+     * cada toque; filtrado tambem pra linhas antigas ja gravadas antes disso.
+     */
     @Transactional(readOnly = true)
     fun timelineBetween(a: UUID, b: UUID): List<GrantAudit> {
         val grantIds = grants.findAllBetween(a, b).map { it.id }
         return if (grantIds.isEmpty()) emptyList()
         else audits.findAllByGrantIdInOrderByCreatedAtDesc(grantIds)
+            .filterNot { it.action == GrantAudit.RULES_CHANGED }
     }
 
     // --- consultas -------------------------------------------------------

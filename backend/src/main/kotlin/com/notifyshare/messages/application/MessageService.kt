@@ -53,7 +53,7 @@ data class TimelineItem(
     /** null quando a mensagem foi apagada (a UI mostra o placeholder). */
     val body: String?,
     val readAt: Instant?,
-    /** so em audit: offered | activated | paused | resumed | revoked | rules_changed */
+    /** so em audit: offered | activated | paused | resumed | revoked */
     val action: String?,
     val edited: Boolean = false,
     val deleted: Boolean = false,

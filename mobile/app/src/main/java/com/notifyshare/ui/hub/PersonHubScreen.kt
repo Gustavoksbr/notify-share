@@ -477,8 +477,8 @@ private fun SharerAppsSection(
             }
         }
 
-        com.notifyshare.ui.share.SaveRulesButton(
-            dirty = state.dirty, saving = state.saving, onSave = vm::save,
+        com.notifyshare.ui.share.SaveStatusLine(
+            saving = state.saving, error = state.error, onRetry = vm::retrySave,
         )
     }
 

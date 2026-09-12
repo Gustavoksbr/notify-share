@@ -647,7 +647,6 @@ private fun AuditLine(item: TimelineItemDto) {
         "paused" -> "Compartilhamento pausado"
         "resumed" -> "Compartilhamento retomado"
         "revoked" -> "Compartilhamento encerrado"
-        "rules_changed" -> "Regras atualizadas" + (item.body?.let { ": $it" } ?: "")
         "offered" -> "Ofereceu compartilhar"
         "requested" -> "Pediu para receber"
         else -> item.action.orEmpty()

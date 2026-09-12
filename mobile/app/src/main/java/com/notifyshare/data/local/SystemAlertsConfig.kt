@@ -26,7 +26,7 @@ const val PKG_SYSTEM_PHONE = "system:phone"
  */
 data class SystemAlerts(
     val batteryLow: Boolean = true,
-    val batteryLowPct: Int = 15,
+    val batteryLowPct: Int = 10,
     val batteryHigh: Boolean = true,
     val batteryHighPct: Int = 80,
     val charging: Boolean = true,
@@ -44,7 +44,7 @@ class SystemAlertsConfig(private val context: Context) {
     val flow: Flow<SystemAlerts> = context.systemAlertsStore.data.map { p ->
         SystemAlerts(
             batteryLow = p[BL] ?: true,
-            batteryLowPct = p[BLP] ?: 15,
+            batteryLowPct = p[BLP] ?: 10,
             batteryHigh = p[BH] ?: true,
             batteryHighPct = p[BHP] ?: 80,
             charging = p[CHG] ?: true,
@@ -59,9 +59,9 @@ class SystemAlertsConfig(private val context: Context) {
         val next = block(current())
         context.systemAlertsStore.edit { p ->
             p[BL] = next.batteryLow
-            p[BLP] = next.batteryLowPct.coerceIn(5, 60)
+            p[BLP] = next.batteryLowPct.coerceIn(1, 99)
             p[BH] = next.batteryHigh
-            p[BHP] = next.batteryHighPct.coerceIn(40, 100)
+            p[BHP] = next.batteryHighPct.coerceIn(1, 99)
             p[CHG] = next.charging
             p[RBT] = next.reboot
             p[DD] = next.dailyDrain
