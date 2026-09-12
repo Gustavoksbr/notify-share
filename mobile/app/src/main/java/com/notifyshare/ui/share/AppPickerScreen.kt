@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -41,18 +42,19 @@ import kotlinx.coroutines.withContext
 private data class AppEntry(val packageName: String, val label: String)
 
 private val SYNTHETIC = listOf(
-    AppEntry("system:battery", "Bateria"),
-    AppEntry("system:wifi", "Wi-Fi"),
+    AppEntry(com.notifyshare.data.local.PKG_SYSTEM_PHONE, "Meu celular"),
 )
 
 @Composable
-fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
+fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, title: String? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as? NotifyShareApp)?.container
     var query by remember { mutableStateOf("") }
 
     val state by vm.state.collectAsStateWithLifecycle()
     val alreadyAdded = remember(state.rules) { state.rules.map { it.packageName }.toSet() }
+    var copyTarget by remember { mutableStateOf<CopyTarget?>(null) }
+    LaunchedEffect(copyTarget) { if (copyTarget != null) vm.loadSourceGrants() }
 
     val apps by produceState(initialValue = emptyList<AppEntry>()) {
         value = withContext(Dispatchers.IO) {
@@ -89,7 +91,7 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
     ) { pad ->
     Column(Modifier.fillMaxSize().padding(pad)) {
-        ScreenTitle("Apps para @$nickname", onBack = onBack)
+        ScreenTitle(title ?: "Apps para @$nickname", onBack = onBack)
 
         com.notifyshare.ui.common.NotificationAccessWarning()
 
@@ -102,6 +104,15 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
             shape = RoundedCornerShape(24.dp),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+
+        Text(
+            "Copiar configuração de outro compartilhamento",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .clickable { copyTarget = CopyTarget.All }
+                .padding(horizontal = 20.dp, vertical = 8.dp),
         )
 
         if (apps.isEmpty()) {
@@ -141,6 +152,21 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit) {
             items(allShown, key = { "a_${it.packageName}" }) { e -> AppRow(e) { add(e) } }
         }
     }
+    }
+
+    copyTarget?.let { target ->
+        CopyConfigDialog(
+            target = target,
+            grants = state.sourceGrants,
+            loading = state.sourceLoading,
+            busy = state.copyBusy,
+            onDismiss = { copyTarget = null },
+            onConfirm = { sourceId, replace ->
+                vm.copyAllFrom(sourceId, replace)
+                copyTarget = null
+                scope.launch { snackbar.showSnackbar("Configuração copiada — revise e salve") }
+            },
+        )
     }
 }
 

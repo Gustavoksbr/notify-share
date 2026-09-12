@@ -508,7 +508,7 @@ private fun GrantRow(
                         isSharer -> "${g.enabledApps} apps" +
                             if (g.hasSpecificSenders) " · remetentes específicos" else ""
                         else -> "${g.enabledApps} apps" +
-                            if (g.hasSpecificSenders) " · só alguns contatos" else ""
+                            if (g.hasSpecificSenders) " · só com determinados contatos" else ""
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = NotifyShareColors.muted,

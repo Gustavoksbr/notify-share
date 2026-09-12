@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.notifyshare.ui.common.verticalScrollbar
 
 @Composable
 fun RegisterScreen(
@@ -32,13 +33,15 @@ fun RegisterScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .systemBarsPadding()
             .imePadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScrollbar(scrollState)
+            .verticalScroll(scrollState)
             .padding(horizontal = 24.dp),
     ) {
         Spacer(Modifier.height(40.dp))

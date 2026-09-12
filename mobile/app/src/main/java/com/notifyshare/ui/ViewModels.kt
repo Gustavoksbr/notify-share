@@ -44,7 +44,18 @@ class RulesViewModelFactory(private val c: AppContainer, private val grantId: St
     ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        RulesViewModel(c.socialRepository, grantId) as T
+        RulesViewModel(
+            com.notifyshare.ui.share.GrantRulesBackend(c.socialRepository, grantId),
+        ) as T
+}
+
+/** Regras do cofre local (nunca sai do aparelho; funciona deslogado). */
+class VaultRulesViewModelFactory(private val c: AppContainer) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        RulesViewModel(
+            com.notifyshare.ui.share.VaultRulesBackend(c.vault, c.socialRepository),
+        ) as T
 }
 
 class RecipientRulesViewModelFactory(private val c: AppContainer, private val grantId: String) :

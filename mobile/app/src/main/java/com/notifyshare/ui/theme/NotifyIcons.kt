@@ -135,6 +135,23 @@ object NotifyIcons {
         )
     }
 
+    val Bookmark: ImageVector by lazy {
+        strokeIcon(name = "Bookmark", "M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z")
+    }
+
+    val Export: ImageVector by lazy {
+        strokeIcon(name = "Export", "M12 3v13", "M7 11l5 5 5-5", "M5 21h14")
+    }
+
+    val LogIn: ImageVector by lazy {
+        strokeIcon(
+            name = "LogIn",
+            "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4",
+            "M10 17l5-5-5-5",
+            "M15 12H3",
+        )
+    }
+
     val AppFallback: ImageVector by lazy {
         strokeIcon(
             name = "AppFallback",

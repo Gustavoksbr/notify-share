@@ -41,7 +41,7 @@ import com.notifyshare.ui.theme.NotifyShareColors
 @Composable
 fun PermissionsScreen(
     fcmStatus: String?,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     onSendTest: (suspend () -> Int?)? = null,
     serviceEnabled: Boolean = true,
     onSetService: (Boolean) -> Unit = {},

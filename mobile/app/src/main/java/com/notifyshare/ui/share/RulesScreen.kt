@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +32,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notifyshare.data.ApiResult
-import com.notifyshare.data.SocialRepository
+import com.notifyshare.data.remote.GrantDto
 import com.notifyshare.data.remote.RuleDto
 import com.notifyshare.data.remote.SenderDto
 import com.notifyshare.ui.common.EmptyState
@@ -55,11 +56,14 @@ data class RulesUiState(
     val error: String? = null,
     val savedAt: Long = 0,
     val refreshing: Boolean = false,
+    /** "Copiar config de outro compartilhamento": candidatos e estado da cópia. */
+    val sourceGrants: List<GrantDto> = emptyList(),
+    val sourceLoading: Boolean = false,
+    val copyBusy: Boolean = false,
 )
 
 class RulesViewModel(
-    private val repo: SocialRepository,
-    private val grantId: String,
+    private val backend: RulesBackend,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(RulesUiState())
@@ -71,7 +75,7 @@ class RulesViewModel(
 
     /** Puxar para recarregar: ignora se ha edicoes nao salvas, para nao perde-las. */
     fun refresh() {
-        if (_state.value.dirty) return
+        if (_state.value.dirty || !backend.supportsRefresh) return
         com.notifyshare.core.Connectivity.probeBeforeRefresh()
         _state.value = _state.value.copy(refreshing = true)
         load(silent = true)
@@ -80,7 +84,7 @@ class RulesViewModel(
     fun load(silent: Boolean = false) {
         _state.value = _state.value.copy(loading = !silent)
         viewModelScope.launch {
-            when (val r = repo.rules(grantId)) {
+            when (val r = backend.load()) {
                 is ApiResult.Ok -> _state.value = RulesUiState(loading = false, rules = r.value)
                 is ApiResult.Failure ->
                     _state.value = _state.value.copy(loading = false, refreshing = false, error = r.message)
@@ -130,17 +134,77 @@ class RulesViewModel(
         )
     }
 
+    // --- copiar config de outro compartilhamento ---------------------------
+
+    /** Carrega os outros grants de sharer, para o diálogo de cópia. */
+    fun loadSourceGrants() {
+        if (_state.value.sourceGrants.isNotEmpty() || _state.value.sourceLoading) return
+        _state.value = _state.value.copy(sourceLoading = true)
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                sourceLoading = false,
+                sourceGrants = backend.copySources(),
+            )
+        }
+    }
+
+    private suspend fun fetchRules(sourceId: String): List<RuleDto>? = backend.rulesOf(sourceId)
+
+    fun copyAllFrom(sourceId: String, replace: Boolean) = copy {
+        val src = fetchRules(sourceId) ?: return@copy null
+        if (replace) src
+        else {
+            val byPkg = src.associateBy { it.packageName }
+            _state.value.rules.filter { it.packageName !in byPkg } + src
+        }
+    }
+
+    fun copyAppFrom(pkg: String, sourceId: String) = copy {
+        val src = fetchRules(sourceId)?.firstOrNull { it.packageName == pkg } ?: return@copy null
+        val exists = _state.value.rules.any { it.packageName == pkg }
+        if (exists) _state.value.rules.map {
+            if (it.packageName != pkg) it
+            else it.copy(
+                contentMode = src.contentMode, allSenders = src.allSenders,
+                senders = src.senders, textFilters = src.textFilters, allowCodes = src.allowCodes,
+            )
+        } else _state.value.rules + src
+    }
+
+    fun copySendersFrom(pkg: String, sourceId: String, replace: Boolean) = copy {
+        val src = fetchRules(sourceId)?.firstOrNull { it.packageName == pkg } ?: return@copy null
+        _state.value.rules.map { r ->
+            if (r.packageName != pkg) r
+            else if (src.allSenders) r.copy(allSenders = true)
+            else r.copy(
+                allSenders = false,
+                senders = if (replace) src.senders
+                else (r.senders + src.senders).distinctBy { it.senderHash },
+            )
+        }
+    }
+
+    private fun copy(block: suspend () -> List<RuleDto>?) {
+        if (_state.value.copyBusy) return
+        _state.value = _state.value.copy(copyBusy = true)
+        viewModelScope.launch {
+            val newRules = block()
+            _state.value =
+                if (newRules == null) _state.value.copy(copyBusy = false, error = "Não foi possível copiar.")
+                else _state.value.copy(rules = newRules, dirty = true, copyBusy = false)
+        }
+    }
+
     fun save() {
         _state.value = _state.value.copy(saving = true)
         viewModelScope.launch {
-            when (val r = repo.setRules(grantId, _state.value.rules)) {
+            when (val r = backend.save(_state.value.rules)) {
                 is ApiResult.Ok -> {
                     _state.value = RulesUiState(
                         loading = false, rules = r.value, dirty = false,
                         savedAt = System.currentTimeMillis(),
                     )
-                    // a aba Compartilhar e o hub releem a contagem de apps na hora
-                    com.notifyshare.core.AppEvents.signal(com.notifyshare.core.AppEvents.GRANTS)
+                    backend.onSaved()
                 }
                 is ApiResult.Failure -> _state.value = _state.value.copy(saving = false, error = r.message)
             }
@@ -154,14 +218,19 @@ fun RulesScreen(
     nickname: String,
     onBack: () -> Unit,
     onPickApps: () -> Unit,
+    onOpenSystemAlerts: () -> Unit = {},
+    title: String? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var contactPickerFor by remember { mutableStateOf<String?>(null) }
+    var copyTarget by remember { mutableStateOf<CopyTarget?>(null) }
+
+    LaunchedEffect(copyTarget) { if (copyTarget != null) vm.loadSourceGrants() }
 
     Column(Modifier.fillMaxSize()) {
         val activeCount = state.rules.count { it.enabled }
         ScreenTitle(
-            if (activeCount > 0) "Apps para @$nickname · $activeCount" else "Apps para @$nickname",
+            title ?: if (activeCount > 0) "Apps para @$nickname · $activeCount" else "Apps para @$nickname",
             onBack = onBack,
             trailing = {
                 Icon(
@@ -173,6 +242,15 @@ fun RulesScreen(
         )
 
         NotificationAccessWarning()
+
+        Text(
+            "Copiar configuração de outro compartilhamento",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .clickable { copyTarget = CopyTarget.All }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
 
         androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
             when {
@@ -200,6 +278,9 @@ fun RulesScreen(
                                 )
                             },
                             onOpenContactPicker = { contactPickerFor = rule.packageName },
+                            onCopyApp = { copyTarget = CopyTarget.App(rule.packageName) },
+                            onCopySenders = { copyTarget = CopyTarget.Senders(rule.packageName) },
+                            onOpenSystemAlerts = onOpenSystemAlerts,
                         )
                     }
                   }
@@ -208,6 +289,24 @@ fun RulesScreen(
         }
 
         SaveRulesButton(dirty = state.dirty, saving = state.saving, onSave = vm::save)
+    }
+
+    copyTarget?.let { target ->
+        CopyConfigDialog(
+            target = target,
+            grants = state.sourceGrants,
+            loading = state.sourceLoading,
+            busy = state.copyBusy,
+            onDismiss = { copyTarget = null },
+            onConfirm = { sourceId, replace ->
+                when (target) {
+                    is CopyTarget.All -> vm.copyAllFrom(sourceId, replace)
+                    is CopyTarget.App -> vm.copyAppFrom(target.pkg, sourceId)
+                    is CopyTarget.Senders -> vm.copySendersFrom(target.pkg, sourceId, replace)
+                }
+                copyTarget = null
+            },
+        )
     }
 
     contactPickerFor?.let { pkg ->
@@ -274,7 +373,11 @@ internal fun RuleCard(
     onToggleSender: (hash: String, label: String?) -> Unit = { _, _ -> },
     onAddSender: (name: String) -> Unit = {},
     onOpenContactPicker: () -> Unit = {},
+    onCopyApp: (() -> Unit)? = null,
+    onCopySenders: (() -> Unit)? = null,
+    onOpenSystemAlerts: (() -> Unit)? = null,
 ) {
+    val isSystemPhone = rule.packageName == com.notifyshare.data.local.PKG_SYSTEM_PHONE
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,7 +407,24 @@ internal fun RuleCard(
             )
         }
 
-        if (rule.enabled) {
+        if (isSystemPhone) {
+            if (rule.enabled) {
+                Text(
+                    "Alertas do próprio aparelho: bateria, carregador, reinício. " +
+                        "Você escolhe quais são enviados.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NotifyShareColors.muted,
+                )
+                onOpenSystemAlerts?.let { cb ->
+                    Text(
+                        "Configurar alertas do celular",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable(onClick = cb).padding(vertical = 4.dp),
+                    )
+                }
+            }
+        } else if (rule.enabled) {
             SegmentedRow(
                 options = listOf("content" to "Conteúdo", "sender_only" to "Só aviso"),
                 selected = if (rule.contentMode == "paused") "content" else rule.contentMode,
@@ -338,6 +458,14 @@ internal fun RuleCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = NotifyShareColors.muted,
                     )
+                    onCopySenders?.let { cb ->
+                        Text(
+                            "Copiar contatos de outro compartilhamento",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable(onClick = cb).padding(vertical = 4.dp),
+                        )
+                    }
                     if (rule.senders.isNotEmpty()) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             rule.senders.forEach { s ->
@@ -368,12 +496,22 @@ internal fun RuleCard(
             }
         }
 
-        Text(
-            "Remover",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.clickable(onClick = onRemove),
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            onCopyApp?.takeIf { !isSystemPhone }?.let { cb ->
+                Text(
+                    "Copiar de…",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClick = cb),
+                )
+            }
+            Text(
+                "Remover",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.clickable(onClick = onRemove),
+            )
+        }
     }
 }
 

@@ -12,9 +12,7 @@ bateria em 20%, o Wi-Fi que caiu. O Notify Share deixa você repassar esses
 avisos para alguém específico, com regras finas sobre **o quê**, **de quem** e
 **para quem**.
 
-Android apenas. O iOS não expõe nenhuma API equivalente ao
-`NotificationListenerService`, então o lado que compartilha é tecnicamente
-impossível lá.
+Android apenas
 
 ---
 

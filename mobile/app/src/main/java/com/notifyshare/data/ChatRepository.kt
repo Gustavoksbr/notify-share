@@ -36,6 +36,21 @@ class ChatRepository(
         }
     }
 
+    /** Puxa TODAS as páginas da conversa (para exportar). null = falhou já na 1ª. */
+    suspend fun fullHistory(nickname: String): List<TimelineItemDto>? {
+        val all = mutableListOf<TimelineItemDto>()
+        var page = 0
+        while (page < 200) {
+            val r = apiCall(json) { api.conversation(nickname, page) }
+            val batch = (r as? ApiResult.Ok)?.value ?: return if (page == 0) null else all
+            if (batch.isEmpty()) break
+            all += batch
+            if (batch.size < 50) break
+            page++
+        }
+        return all
+    }
+
     suspend fun send(
         nickname: String,
         body: String,

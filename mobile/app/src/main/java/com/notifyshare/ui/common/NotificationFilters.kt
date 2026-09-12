@@ -141,6 +141,7 @@ private fun ChipRow(
 }
 
 fun prettyPackage(pkg: String): String = when {
+    pkg == "system:phone" -> "Meu celular"
     pkg.startsWith("system:") -> pkg.removePrefix("system:").replaceFirstChar { it.uppercase() }
     else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
 }

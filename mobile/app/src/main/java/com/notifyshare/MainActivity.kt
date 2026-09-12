@@ -115,6 +115,26 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
         return
     }
 
+    // "Adicionar conta": formulário em tela cheia, com Cancelar — não o shell.
+    if (addingAccount) {
+        AuthNavHost(authViewModel, addingAccount = true, onCancelAdd = { addingAccount = false })
+        return
+    }
+
+    // Deslogado de verdade: shell de 2 abas (Entrar | Salvos). O cofre (Salvos)
+    // funciona sem conta e sem internet.
+    com.notifyshare.ui.shell.LoggedOutShell(
+        container = container,
+        authContent = { AuthNavHost(authViewModel, addingAccount = false, onCancelAdd = {}) },
+    )
+}
+
+@Composable
+private fun AuthNavHost(
+    authViewModel: AuthViewModel,
+    addingAccount: Boolean,
+    onCancelAdd: () -> Unit,
+) {
     val navController = rememberNavController()
 
     NavHost(navController = navController, startDestination = Routes.LOGIN) {
@@ -123,7 +143,7 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
                 viewModel = authViewModel,
                 onGoToRegister = { navController.navigate(Routes.REGISTER) },
                 onForgotPassword = { navController.navigate(Routes.RECOVER) },
-                onCancel = if (addingAccount) ({ addingAccount = false }) else null,
+                onCancel = if (addingAccount) onCancelAdd else null,
             )
         }
         composable(Routes.REGISTER) {

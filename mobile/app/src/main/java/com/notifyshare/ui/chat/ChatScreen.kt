@@ -110,6 +110,12 @@ class ChatViewModel(
         load(silent = true)
     }
 
+    /** Monta a transcrição completa da conversa (todas as páginas) como texto. */
+    fun exportTranscript(onReady: (String?) -> Unit) = viewModelScope.launch {
+        val items = repo.fullHistory(nickname)
+        onReady(items?.let { com.notifyshare.ui.chat.buildTranscript(nickname, it) })
+    }
+
     fun load(silent: Boolean = false) {
         if (!silent) _state.value = _state.value.copy(loading = true)
         viewModelScope.launch {

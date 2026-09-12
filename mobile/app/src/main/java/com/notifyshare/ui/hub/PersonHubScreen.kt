@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -168,6 +169,7 @@ fun PersonHubScreen(
     onBack: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenAppPicker: (grantId: String) -> Unit,
+    onOpenSystemAlerts: () -> Unit = {},
     /** Chegou aqui por "responder notificação" de fora do hub (Feed, notificações
      *  da pessoa) — pre-anexa essa notificação na primeira composição do chat. */
     initialLinkedEvent: String? = null,
@@ -191,6 +193,9 @@ fun PersonHubScreen(
     var tabIndex by rememberSaveable { mutableIntStateOf(tabFromArg(initialTab).ordinal) }
     val tab = HubTab.values()[tabIndex]
     var highlightEvent by remember { mutableStateOf<String?>(null) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var exporting by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -224,6 +229,30 @@ fun PersonHubScreen(
                         color = if (chatState.online) NotifyShareColors.online else NotifyShareColors.muted,
                     )
                 }
+            }
+            if (tab == HubTab.CONVERSA && !exporting) {
+                Icon(
+                    NotifyIcons.Export,
+                    "Exportar conversa",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clickable {
+                            exporting = true
+                            chatVm.exportTranscript { text ->
+                                exporting = false
+                                if (text != null) {
+                                    com.notifyshare.ui.common.shareTextExport(
+                                        context, "conversa-$nickname.txt", text,
+                                    )
+                                } else {
+                                    android.widget.Toast.makeText(
+                                        context, "Não deu para exportar agora", android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        }
+                        .padding(8.dp),
+                )
             }
         }
 
@@ -293,6 +322,7 @@ fun PersonHubScreen(
                     onOffer = hubVm::offer,
                     onRequest = hubVm::request,
                     onOpenAppPicker = onOpenAppPicker,
+                    onOpenSystemAlerts = onOpenSystemAlerts,
                 )
             }
         }
@@ -308,6 +338,7 @@ private fun PersonAppsTab(
     onOffer: () -> Unit,
     onRequest: () -> Unit,
     onOpenAppPicker: (grantId: String) -> Unit,
+    onOpenSystemAlerts: () -> Unit = {},
 ) {
     if (hub.loading) {
         LoadingBox()
@@ -329,7 +360,7 @@ private fun PersonAppsTab(
             if (sub == 0) {
                 val sharerGrantId = hub.sharerGrantId
                 if (sharerGrantId != null) {
-                    SharerAppsSection(hubEntry, container, sharerGrantId, onOpenAppPicker)
+                    SharerAppsSection(hubEntry, container, sharerGrantId, onOpenAppPicker, onOpenSystemAlerts)
                 } else {
                     AppsTabEmpty(
                         "Você ainda não compartilha com @$nickname.",
@@ -375,6 +406,7 @@ private fun SharerAppsSection(
     container: AppContainer,
     grantId: String,
     onOpenAppPicker: (grantId: String) -> Unit,
+    onOpenSystemAlerts: () -> Unit = {},
 ) {
     val vm: RulesViewModel = viewModel(
         viewModelStoreOwner = hubEntry,
@@ -383,6 +415,9 @@ private fun SharerAppsSection(
     )
     val state by vm.state.collectAsStateWithLifecycle()
     var contactPickerFor by remember { mutableStateOf<String?>(null) }
+    var copyTarget by remember { mutableStateOf<com.notifyshare.ui.share.CopyTarget?>(null) }
+
+    LaunchedEffect(copyTarget) { if (copyTarget != null) vm.loadSourceGrants() }
 
     Column(Modifier.fillMaxSize()) {
         Column(
@@ -399,6 +434,15 @@ private fun SharerAppsSection(
                     .padding(horizontal = 18.dp)
                     .clickable { onOpenAppPicker(grantId) }
                     .padding(vertical = 6.dp),
+            )
+            Text(
+                "Copiar configuração de outro compartilhamento",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(horizontal = 18.dp)
+                    .clickable { copyTarget = com.notifyshare.ui.share.CopyTarget.All }
+                    .padding(vertical = 4.dp),
             )
 
             when {
@@ -424,6 +468,9 @@ private fun SharerAppsSection(
                                 vm.toggleSender(rule.packageName, com.notifyshare.notify.hashSender(name), name)
                             },
                             onOpenContactPicker = { contactPickerFor = rule.packageName },
+                            onCopyApp = { copyTarget = com.notifyshare.ui.share.CopyTarget.App(rule.packageName) },
+                            onCopySenders = { copyTarget = com.notifyshare.ui.share.CopyTarget.Senders(rule.packageName) },
+                            onOpenSystemAlerts = onOpenSystemAlerts,
                         )
                     }
                 }
@@ -432,6 +479,25 @@ private fun SharerAppsSection(
 
         com.notifyshare.ui.share.SaveRulesButton(
             dirty = state.dirty, saving = state.saving, onSave = vm::save,
+        )
+    }
+
+    copyTarget?.let { target ->
+        com.notifyshare.ui.share.CopyConfigDialog(
+            target = target,
+            grants = state.sourceGrants,
+            loading = state.sourceLoading,
+            busy = state.copyBusy,
+            onDismiss = { copyTarget = null },
+            onConfirm = { sourceId, replace ->
+                when (target) {
+                    is com.notifyshare.ui.share.CopyTarget.All -> vm.copyAllFrom(sourceId, replace)
+                    is com.notifyshare.ui.share.CopyTarget.App -> vm.copyAppFrom(target.pkg, sourceId)
+                    is com.notifyshare.ui.share.CopyTarget.Senders ->
+                        vm.copySendersFrom(target.pkg, sourceId, replace)
+                }
+                copyTarget = null
+            },
         )
     }
 

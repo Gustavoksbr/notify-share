@@ -41,6 +41,7 @@ fun AppIcon(packageName: String, size: Dp = 40.dp, modifier: Modifier = Modifier
     val context = LocalContext.current
 
     when (packageName) {
+        "system:phone" -> return SyntheticIcon(NotifyIcons.Battery, size, modifier)
         "system:battery" -> return SyntheticIcon(NotifyIcons.Battery, size, modifier)
         "system:wifi" -> return SyntheticIcon(NotifyIcons.Wifi, size, modifier)
     }

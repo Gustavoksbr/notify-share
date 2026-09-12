@@ -1,5 +1,6 @@
 package com.notifyshare.ui.auth
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.notifyshare.ui.common.verticalScrollbar
 
 @Composable
 fun LoginScreen(
@@ -33,28 +35,30 @@ fun LoginScreen(
     onCancel: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .systemBarsPadding()
             .imePadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScrollbar(scrollState)
+            .verticalScroll(scrollState)
             .padding(horizontal = 24.dp),
     ) {
         if (onCancel != null) {
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             TextButton(onClick = onCancel) {
                 Text("Cancelar", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(12.dp))
         } else {
-            Spacer(Modifier.height(72.dp))
+            Spacer(Modifier.height(40.dp))
         }
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
             BrandMark()
@@ -70,9 +74,9 @@ fun LoginScreen(
             )
         }
 
-        Spacer(Modifier.height(44.dp))
+        Spacer(Modifier.height(24.dp))
 
-        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             AuthTextField(
                 value = state.identifier,
                 onValueChange = viewModel::onIdentifierChange,
@@ -92,6 +96,18 @@ fun LoginScreen(
                 errorMessage = state.errorMessage,
             )
 
+            // "Esqueci a senha" logo abaixo do campo, alinhado à direita — ocupa
+            // pouca altura, para o botão do Google caber sem rolar a tela.
+            Text(
+                "Esqueci minha senha",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .clickable(onClick = onForgotPassword)
+                    .padding(vertical = 2.dp, horizontal = 4.dp),
+            )
+
             // Erro sem campo associado: credencial invalida, servidor fora.
             if (state.errorMessage != null && state.errorField == null) {
                 FormErrorBanner(state.errorMessage!!)
@@ -103,13 +119,6 @@ fun LoginScreen(
                 enabled = state.canSubmitLogin,
                 loading = state.loading,
             )
-
-            TextButton(
-                onClick = onForgotPassword,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Esqueci minha senha", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
 
             Text(
                 "ou",
@@ -134,7 +143,7 @@ fun LoginScreen(
 
         GoogleNicknameDialog(viewModel)
 
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(24.dp))
     }
 }
 

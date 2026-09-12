@@ -78,10 +78,11 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
     data object Feed : Tab("feed", "Feed", NotifyIcons.Bell)
     data object Friends : Tab("friends", "Amigos", NotifyIcons.Users)
     data object Share : Tab("share", "Compartilhar", NotifyIcons.Share)
+    data object Vault : Tab("vault", "Salvos", NotifyIcons.Bookmark)
     data object Profile : Tab("profile", "Perfil", NotifyIcons.User)
 }
 
-private val tabs = listOf(Tab.Feed, Tab.Friends, Tab.Share, Tab.Profile)
+private val tabs = listOf(Tab.Feed, Tab.Friends, Tab.Share, Tab.Vault, Tab.Profile)
 
 @Composable
 fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> Unit) {
@@ -197,50 +198,11 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
             }
         },
     ) { padding ->
-        val netState by Connectivity.state.collectAsStateWithLifecycle()
-        val hasActiveShare by container.shareState.hasActiveShare.collectAsStateWithLifecycle(initialValue = false)
-
-        // O acesso a notificacoes some quando o app e reinstalado. Se a pessoa
-        // compartilha apps mas essa permissao caiu, o compartilhamento esta
-        // quebrado sem nenhum aviso — este banner e o aviso.
-        var nlsGranted by remember { mutableStateOf(true) }
-        LifecycleResumeEffect(Unit) {
-            nlsGranted = com.notifyshare.core.NotificationAccess.isGranted(context)
-            onPauseOrDispose { }
-        }
-
         Column(Modifier.padding(padding)) {
-            val banner = when (netState) {
-                com.notifyshare.core.NetState.NO_INTERNET -> "Você está sem internet"
-                com.notifyshare.core.NetState.SERVER_DOWN -> "Servidor fora do ar — tentando reconectar"
-                com.notifyshare.core.NetState.OK -> null
-            }
-            if (banner != null) {
-                Text(
-                    banner,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .padding(vertical = 6.dp),
-                )
-            }
-            if (!nlsGranted && hasActiveShare && showBottomBar) {
-                Text(
-                    "⚠️ O compartilhamento de apps não está funcionando: falta o acesso às " +
-                        "notificações. Toque para ativar.",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.errorContainer)
-                        .clickable { nav.navigate("permissions") }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                )
-            }
+            com.notifyshare.ui.common.AppWarningBanners(
+                container = container,
+                onOpenPermissions = { nav.navigate("permissions") },
+            )
             NavHost(
                 navController = nav,
                 startDestination = Tab.Feed.route,
@@ -270,6 +232,9 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     onOpenNotifyRules = { grantId, nick -> nav.navigate("notify-rules/$grantId/$nick") },
                     onOpenNotifications = { nick -> nav.navigate("person/$nick?from=share") },
                 )
+            }
+            composable(Tab.Vault.route) {
+                com.notifyshare.ui.vault.VaultNav(container)
             }
             composable(Tab.Profile.route) {
                 val vm: ProfileViewModel = viewModel(factory = tabFactory)
@@ -412,6 +377,7 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     onBack = { nav.popBackStack() },
                     onOpenProfile = { nav.navigate("user/$nick?from=hub") },
                     onOpenAppPicker = { grantId -> nav.navigate("hub-apps/$grantId/$nick") },
+                    onOpenSystemAlerts = { nav.navigate("system-alerts") },
                 )
             }
             composable("hub-apps/{grantId}/{nickname}") { entry ->
@@ -436,11 +402,12 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                 val nick = entry.arguments?.getString("nickname").orEmpty()
                 val vm: RulesViewModel = viewModel(factory = RulesViewModelFactory(container, grantId))
                 RulesScreen(
-                    vm = vm, nickname = nick, onBack = { 
+                    vm = vm, nickname = nick, onBack = {
                         // Volta para a tela anterior
                         nav.popBackStack()
                     },
                     onPickApps = { nav.navigate("apps/$grantId/$nick") },
+                    onOpenSystemAlerts = { nav.navigate("system-alerts") },
                 )
             }
             composable("apps/{grantId}/{nickname}") { entry ->
@@ -471,6 +438,12 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                         // Volta para a tela anterior
                         nav.popBackStack()
                     },
+                )
+            }
+            composable("system-alerts") {
+                com.notifyshare.ui.settings.SystemAlertsScreen(
+                    container = container,
+                    onBack = { nav.popBackStack() },
                 )
             }
             composable("permissions") {

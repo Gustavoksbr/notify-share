@@ -7,18 +7,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.getSystemService
 import com.notifyshare.MainActivity
 import com.notifyshare.NotifyShareApp
 import com.notifyshare.R
+import com.notifyshare.data.local.DrainState
+import com.notifyshare.data.local.PKG_SYSTEM_PHONE
 import com.notifyshare.fcm.NotificationChannels
 import com.notifyshare.notify.IngestWorker
 import kotlinx.coroutines.CoroutineScope
@@ -27,33 +26,38 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Servico em primeiro plano ativo enquanto ha compartilhamento:
  *  - notificacao fixa de "servico ativo"
- *  - eventos de bateria e Wi-Fi
+ *  - eventos do "Meu celular" (bateria, carregador, resumo diario)
  *  - WebSocket enquanto o app roda
  *  - agenda o watchdog
+ *
+ * O evento "celular reiniciou" nao mora aqui — vem do BootReceiver.
  */
 class ShareForegroundService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var powerReceiver: BroadcastReceiver? = null
-    private var netCallback: ConnectivityManager.NetworkCallback? = null
+    private var batteryReceiver: BroadcastReceiver? = null
+
+    // Histerese em memoria: dispara uma vez por cruzamento, re-arma ao afastar.
+    private var lowArmed = true
+    private var highArmed = true
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startInForeground(intent?.getIntExtra(EXTRA_COUNT, 0) ?: 0)
-        registerPower()
-        registerNetwork()
+        registerBattery()
         WatchdogWorker.schedule(applicationContext)
         return START_STICKY
     }
 
     override fun onDestroy() {
-        powerReceiver?.let { runCatching { unregisterReceiver(it) } }
-        netCallback?.let { cb -> getSystemService<ConnectivityManager>()?.unregisterNetworkCallback(cb) }
+        batteryReceiver?.let { runCatching { unregisterReceiver(it) } }
         scope.cancel()
         super.onDestroy()
     }
@@ -89,60 +93,134 @@ class ShareForegroundService : Service() {
         )
     }
 
-    private fun registerPower() {
+    private fun registerBattery() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 when (intent.action) {
-                    Intent.ACTION_BATTERY_LOW -> emit("battery", "bateria baixa", "Bateria baixa")
-                    Intent.ACTION_POWER_DISCONNECTED -> emit("battery", "carregador", "Carregador desconectado")
+                    Intent.ACTION_BATTERY_CHANGED -> onBatteryChanged(intent)
+                    Intent.ACTION_POWER_CONNECTED -> onCharging(true)
+                    Intent.ACTION_POWER_DISCONNECTED -> onCharging(false)
                 }
             }
         }
         val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_BATTERY_LOW)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
         }
         ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        powerReceiver = receiver
+        batteryReceiver = receiver
     }
 
-    private fun registerNetwork() {
-        val cm = getSystemService<ConnectivityManager>() ?: return
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onLost(network: Network) {
-                emit("network", "wifi-lost", "Wi-Fi desconectou")
-            }
-            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                    emit("network", "wifi-up", "Wi-Fi conectou")
+    private fun onBatteryChanged(intent: Intent) {
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        if (level < 0 || scale <= 0) return
+        val pct = (level * 100) / scale
+
+        scope.launch {
+            val app = application as? NotifyShareApp ?: return@launch
+            val cfg = app.container.systemAlerts.current()
+
+            if (cfg.batteryLow) {
+                if (pct <= cfg.batteryLowPct && lowArmed) {
+                    lowArmed = false
+                    emit("battery-low", "Bateria em $pct%")
+                } else if (pct >= cfg.batteryLowPct + REARM_GAP) {
+                    lowArmed = true
                 }
             }
+            if (cfg.batteryHigh) {
+                if (pct >= cfg.batteryHighPct && highArmed) {
+                    highArmed = false
+                    val msg = if (pct >= 100) "Bateria carregada (100%)" else "Bateria em $pct%"
+                    emit("battery-high", msg)
+                } else if (pct <= cfg.batteryHighPct - REARM_GAP) {
+                    highArmed = true
+                }
+            }
+
+            updateDailyDrain(app, cfg, pct)
         }
-        runCatching { cm.registerDefaultNetworkCallback(callback) }
-        netCallback = callback
     }
 
-    private fun emit(type: String, dedupSuffix: String, message: String) {
-        val app = application as? NotifyShareApp ?: return
-        if (!app.container.sharingActive) return
+    /** Acumula so as quedas do dia (ignora recarga); no virar do dia, emite o resumo. */
+    private suspend fun updateDailyDrain(app: NotifyShareApp, cfg: com.notifyshare.data.local.SystemAlerts, pct: Int) {
+        val today = LocalDate.now(ZoneId.systemDefault()).toEpochDay()
+        val prev = app.container.systemAlerts.drainState()
+        if (prev == null) {
+            app.container.systemAlerts.setDrainState(DrainState(today, pct, 0))
+            return
+        }
+        if (prev.epochDay != today) {
+            if (cfg.dailyDrain && prev.drainAccum > 0) {
+                emit("daily-drain", "Ontem o celular consumiu cerca de ${prev.drainAccum}% de bateria")
+            }
+            app.container.systemAlerts.setDrainState(DrainState(today, pct, 0))
+            return
+        }
+        val drop = (prev.lastLevel - pct).coerceAtLeast(0)
+        app.container.systemAlerts.setDrainState(
+            DrainState(today, pct, prev.drainAccum + drop),
+        )
+    }
+
+    private fun onCharging(connected: Boolean) {
         scope.launch {
-            val now = Instant.now()
-            IngestWorker.enqueue(
-                context = applicationContext,
-                packageName = if (type == "battery") "system:battery" else "system:wifi",
-                eventType = type,
-                senderHash = null,
-                occurredAt = now.toString(),
-                // janela de 10 min: evita repetir o mesmo aviso em rajada
-                dedupKey = "$type|$dedupSuffix|${now.epochSecond / 600}",
-                content = """{"body":"$message"}""",
+            val app = application as? NotifyShareApp ?: return@launch
+            if (!app.container.systemAlerts.current().charging) return@launch
+            emit(
+                if (connected) "charge-on" else "charge-off",
+                if (connected) "Começou a carregar" else "Parou de carregar",
             )
         }
+    }
+
+    /**
+     * Cofre local: sempre (se a regra de "Meu celular" capturar). Servidor: so
+     * com compartilhamento ativo. dedupKey em janela de 30 min para o "armed"
+     * resetado num restart nao virar rajada.
+     */
+    private fun emit(suffix: String, message: String) {
+        val app = application as? NotifyShareApp ?: return
+        val now = Instant.now()
+        val dedup = "sysphone|$suffix|${now.epochSecond / 1800}"
+
+        val matched = com.notifyshare.notify.VaultMatcher.match(
+            rules = app.container.vault.rulesSnapshot(),
+            packageName = PKG_SYSTEM_PHONE, eventType = "system", senderHash = null, text = message,
+        )
+        if (matched != null) {
+            scope.launch {
+                app.container.vault.addItem(
+                    com.notifyshare.data.local.VaultItem(
+                        id = dedup,
+                        packageName = PKG_SYSTEM_PHONE,
+                        eventType = "system",
+                        occurredAt = now.toString(),
+                        savedAt = now.toString(),
+                        body = message,
+                    ),
+                )
+            }
+        }
+
+        if (!app.container.sharingActive) return
+        IngestWorker.enqueue(
+            context = applicationContext,
+            packageName = PKG_SYSTEM_PHONE,
+            eventType = "system",
+            senderHash = null,
+            occurredAt = now.toString(),
+            dedupKey = dedup,
+            content = """{"body":"$message"}""",
+        )
     }
 
     companion object {
         private const val NOTIF_ID = 42
         private const val EXTRA_COUNT = "count"
+        private const val REARM_GAP = 5
 
         fun start(context: Context, peopleCount: Int = 0) {
             ContextCompat.startForegroundService(

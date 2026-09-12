@@ -83,7 +83,7 @@ internal fun RecipientSendersLine(rule: RecipientAppRuleDto) {
     if (!com.notifyshare.notify.AppCapabilities.of(rule.packageName).supportsSenders) return
     val text = when {
         rule.allSenders -> "Todos os contatos"
-        rule.senders.isEmpty() -> "Só alguns contatos"
+        rule.senders.isEmpty() -> "Só com determinados contatos"
         else -> "Esses contatos: " + rule.senders.joinToString(", ")
     }
     Text(text, style = MaterialTheme.typography.labelSmall, color = NotifyShareColors.muted)
