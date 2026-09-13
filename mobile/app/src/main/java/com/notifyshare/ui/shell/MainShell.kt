@@ -78,14 +78,19 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
     data object Feed : Tab("feed", "Feed", NotifyIcons.Bell)
     data object Friends : Tab("friends", "Amigos", NotifyIcons.Users)
     data object Share : Tab("share", "Compartilhar", NotifyIcons.Share)
-    data object Vault : Tab("vault", "Salvos", NotifyIcons.Bookmark)
     data object Profile : Tab("profile", "Perfil", NotifyIcons.User)
 }
 
-private val tabs = listOf(Tab.Feed, Tab.Friends, Tab.Share, Tab.Vault, Tab.Profile)
+private val tabs = listOf(Tab.Feed, Tab.Friends, Tab.Share, Tab.Profile)
 
 @Composable
-fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> Unit) {
+fun MainShell(
+    container: AppContainer,
+    openTarget: String?,
+    onAddAccount: () -> Unit,
+    mode: com.notifyshare.data.local.AppMode,
+    onModeChange: (com.notifyshare.data.local.AppMode) -> Unit,
+) {
     val nav = rememberNavController()
     val tabFactory = remember(container) { TabViewModelFactory(container) }
     val context = LocalContext.current
@@ -199,6 +204,7 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
         },
     ) { padding ->
         Column(Modifier.padding(padding)) {
+            com.notifyshare.ui.shell.AppModeSwitcher(mode, onModeChange)
             com.notifyshare.ui.common.AppWarningBanners(
                 container = container,
                 onOpenPermissions = { nav.navigate("permissions") },
@@ -232,9 +238,6 @@ fun MainShell(container: AppContainer, openTarget: String?, onAddAccount: () -> 
                     onOpenNotifyRules = { grantId, nick -> nav.navigate("notify-rules/$grantId/$nick") },
                     onOpenNotifications = { nick -> nav.navigate("person/$nick?from=share") },
                 )
-            }
-            composable(Tab.Vault.route) {
-                com.notifyshare.ui.vault.VaultNav(container)
             }
             composable(Tab.Profile.route) {
                 val vm: ProfileViewModel = viewModel(factory = tabFactory)

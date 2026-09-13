@@ -13,24 +13,23 @@ import com.notifyshare.ui.share.RulesScreen
 import com.notifyshare.ui.share.RulesViewModel
 
 /**
- * Sub-navegação do cofre — usada como conteúdo de uma aba nos dois shells
- * (logado e deslogado). Timeline ↔ regras ↔ seletor de apps ↔ alertas do sistema.
+ * Sub-navegação de "o que o cofre guarda": regras ↔ seletor de apps ↔ alertas
+ * do sistema. É a aba "Apps" do modo Local, separada de "Salvos" (a timeline
+ * em si) — configurar o quê guardar não precisa ficar grudado em ver o que já
+ * foi guardado.
  */
 @Composable
-fun VaultNav(container: AppContainer) {
+fun VaultAppsNav(container: AppContainer) {
     val nav = rememberNavController()
 
-    NavHost(navController = nav, startDestination = "timeline") {
-        composable("timeline") {
-            VaultTimelineScreen(container, onOpenRules = { nav.navigate("rules") })
-        }
+    NavHost(navController = nav, startDestination = "rules") {
         composable("rules") {
             val vm: RulesViewModel = viewModel(factory = VaultRulesViewModelFactory(container))
             RulesScreen(
                 vm = vm,
                 nickname = "o cofre",
-                title = "O que guardar",
-                onBack = { nav.popBackStack() },
+                title = "Apps",
+                onBack = null,
                 onPickApps = { nav.navigate("apps") },
                 onOpenSystemAlerts = { nav.navigate("system-alerts") },
             )

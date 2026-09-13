@@ -1,4 +1,4 @@
-package com.notifyshare.ui.common
+package com.notifyshare.ui.vault
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,25 +24,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.notifyshare.data.FeedQuery
+import com.notifyshare.ui.common.ChipRow
+import com.notifyshare.ui.common.SectionLabel
+import com.notifyshare.ui.common.prettyPackage
 
 /**
- * Painel de filtros das telas de notificacoes (feed geral e por pessoa).
- * `people` vazio esconde a secao "De quem" (na tela por pessoa nao faz sentido).
- * A lista de apps e paginada/buscavel porque pode crescer sem limite.
+ * Filtros do cofre — mesma anatomia do [com.notifyshare.ui.common.NotificationFiltersSheet]
+ * do feed social, mais o período exato (calendário), possível só porque tudo
+ * aqui é local. Reaproveitada tanto pra filtrar a timeline quanto pra escolher
+ * o que exportar (o [confirmLabel] muda conforme o uso).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NotificationFiltersSheet(
-    current: FeedQuery,
-    people: List<String>,
+fun VaultFiltersSheet(
+    current: VaultQuery,
     packages: List<String>,
+    senders: List<String>,
+    confirmLabel: String = "Aplicar",
     onDismiss: () -> Unit,
-    onApply: (FeedQuery) -> Unit,
+    onApply: (VaultQuery) -> Unit,
     onClear: () -> Unit,
 ) {
     var draft by remember { mutableStateOf(current) }
     var appQuery by remember { mutableStateOf("") }
+    var showCalendar by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -52,30 +57,48 @@ fun NotificationFiltersSheet(
             Text("Filtros", style = MaterialTheme.typography.titleLarge)
 
             SectionLabel("Período")
-            ChipRow(
-                options = listOf("all" to "Tudo", "today" to "Hoje", "7d" to "7 dias"),
-                selected = draft.period,
-                onSelect = { draft = draft.copy(period = it ?: "all") },
-                allowNone = false,
-            )
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("all" to "Tudo", "today" to "Hoje", "7d" to "7 dias").forEach { (value, label) ->
+                    val on = draft.period == value
+                    FilterChip(
+                        selected = on,
+                        onClick = { draft = draft.copy(period = value) },
+                        label = { Text(label) },
+                    )
+                }
+                FilterChip(
+                    selected = draft.period == "custom",
+                    onClick = { showCalendar = true },
+                    label = {
+                        Text(
+                            if (draft.period == "custom" && draft.fromDate != null) {
+                                if (draft.toDate != null && draft.toDate != draft.fromDate) {
+                                    "${draft.fromDate} a ${draft.toDate}"
+                                } else {
+                                    "${draft.fromDate}"
+                                }
+                            } else {
+                                "Escolher data…"
+                            },
+                        )
+                    },
+                )
+            }
 
             SectionLabel("Tipo")
             ChipRow(
-                options = listOf(
-                    "message" to "Mensagens", "battery" to "Bateria",
-                    "network" to "Rede", "system" to "Sistema",
-                ),
+                options = listOf("message" to "Mensagens", "system" to "Alertas do sistema"),
                 selected = draft.type,
                 onSelect = { draft = draft.copy(type = it) },
                 allowNone = true,
             )
 
-            if (people.isNotEmpty()) {
-                SectionLabel("De quem")
+            if (senders.isNotEmpty()) {
+                SectionLabel("Remetente")
                 ChipRow(
-                    options = people.map { it to "@$it" },
-                    selected = draft.from,
-                    onSelect = { draft = draft.copy(from = it) },
+                    options = senders.map { it to it },
+                    selected = draft.sender,
+                    onSelect = { draft = draft.copy(sender = it) },
                     allowNone = true,
                 )
             }
@@ -97,11 +120,7 @@ fun NotificationFiltersSheet(
                 LazyColumn(Modifier.heightIn(max = 220.dp)) {
                     items(shown, key = { it }) { pkg ->
                         val on = draft.packageName == pkg
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                        ) {
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                             FilterChip(
                                 selected = on,
                                 onClick = { draft = draft.copy(packageName = if (on) null else pkg) },
@@ -114,34 +133,20 @@ fun NotificationFiltersSheet(
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
                 OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) { Text("Limpar") }
-                Button(onClick = { onApply(draft) }, modifier = Modifier.weight(1f)) { Text("Aplicar") }
+                Button(onClick = { onApply(draft) }, modifier = Modifier.weight(1f)) { Text(confirmLabel) }
             }
         }
     }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun ChipRow(
-    options: List<Pair<String, String>>,
-    selected: String?,
-    onSelect: (String?) -> Unit,
-    allowNone: Boolean,
-) {
-    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { (value, label) ->
-            val on = selected == value
-            FilterChip(
-                selected = on,
-                onClick = { onSelect(if (on && allowNone) null else value) },
-                label = { Text(label) },
-            )
-        }
+    if (showCalendar) {
+        VaultDateRangeDialog(
+            initialFrom = draft.fromDate,
+            initialTo = draft.toDate,
+            onDismiss = { showCalendar = false },
+            onConfirm = { from, to ->
+                draft = draft.copy(period = "custom", fromDate = from, toDate = to ?: from)
+                showCalendar = false
+            },
+        )
     }
-}
-
-fun prettyPackage(pkg: String): String = when {
-    pkg == "system:phone" -> "Meu celular"
-    pkg.startsWith("system:") -> pkg.removePrefix("system:").replaceFirstChar { it.uppercase() }
-    else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
 }

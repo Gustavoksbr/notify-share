@@ -55,6 +55,8 @@ class AppContainer(context: Context) {
     val shareState = ShareState(context.applicationContext)
     val serviceSwitch = com.notifyshare.data.local.ServiceSwitch(context.applicationContext)
     val systemAlerts = com.notifyshare.data.local.SystemAlertsConfig(context.applicationContext)
+    /** Social × Local — device-wide, independente de login/conta. */
+    val appMode = com.notifyshare.data.local.AppModeStore(context.applicationContext)
     /** Cofre local — só neste aparelho, funciona deslogado. */
     val vault = com.notifyshare.data.local.VaultStore(context.applicationContext)
 

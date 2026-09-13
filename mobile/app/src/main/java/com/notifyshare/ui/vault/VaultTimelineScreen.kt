@@ -44,16 +44,29 @@ import kotlinx.coroutines.launch
 
 /**
  * O "cofre": tudo que as regras locais capturaram, mais novo no topo. Vive só
- * neste aparelho. `onOpenRules` abre a config de o quê guardar.
+ * neste aparelho. O quê guardar se configura na aba "Apps" (ver VaultAppsNav),
+ * não daqui — timeline e configuração são coisas separadas.
  */
 @Composable
-fun VaultTimelineScreen(container: AppContainer, onOpenRules: () -> Unit) {
+fun VaultTimelineScreen(container: AppContainer) {
     val items by container.vault.items.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     var confirmDelete by remember { mutableStateOf<VaultItem?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var detailOf by remember { mutableStateOf<VaultItem?>(null) }
+    var viewFilter by remember { mutableStateOf(VaultQuery()) }
+    var showFilters by remember { mutableStateOf(false) }
+    var showExportChoice by remember { mutableStateOf(false) }
+    var showExportFilters by remember { mutableStateOf(false) }
+
+    val packages = remember(items) { items.map { it.packageName }.distinct().sorted() }
+    val senders = remember(items) { items.mapNotNull { it.sender }.distinct().sorted() }
+    val filtered = remember(items, viewFilter) { items.filter { it.matches(viewFilter) } }
+
+    fun export(toExport: List<VaultItem>) {
+        shareTextExport(context, "notify-share-cofre.txt", buildVaultExport(toExport))
+    }
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle(
@@ -61,58 +74,96 @@ fun VaultTimelineScreen(container: AppContainer, onOpenRules: () -> Unit) {
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (items.isNotEmpty()) {
+                        val n = viewFilter.activeCount
+                        Text(
+                            if (n > 0) "Filtros · $n" else "Filtros",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { showFilters = true }.padding(8.dp),
+                        )
                         Text(
                             "Exportar",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .clickable {
-                                    shareTextExport(
-                                        context, "notify-share-cofre.txt", buildVaultExport(items),
-                                    )
-                                }
-                                .padding(8.dp),
+                            modifier = Modifier.clickable { showExportChoice = true }.padding(8.dp),
                         )
                     }
-                    Text(
-                        "Configurar",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable(onClick = onOpenRules).padding(8.dp),
-                    )
                 }
             },
         )
 
         if (items.isEmpty()) {
             EmptyState(
-                "Nada guardado ainda.\nToque em \"Configurar\" e escolha o que este " +
+                "Nada guardado ainda.\nNa aba \"Apps\", escolha o que este " +
                     "aparelho deve guardar — só aqui, nunca na nuvem.",
             )
             return
         }
 
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(items, key = { it.id }) { item ->
-                VaultRow(item, onDelete = { confirmDelete = item }, onOpenDetail = { detailOf = item })
-            }
-            item {
-                Text(
-                    "Limpar tudo",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { confirmClear = true }
-                        .padding(20.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
+        if (filtered.isEmpty()) {
+            EmptyState("Nada bate com esses filtros.")
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(filtered, key = { it.id }) { item ->
+                    VaultRow(item, onDelete = { confirmDelete = item }, onOpenDetail = { detailOf = item })
+                }
+                item {
+                    Text(
+                        "Limpar tudo",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { confirmClear = true }
+                            .padding(20.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
             }
         }
+    }
+
+    if (showFilters) {
+        VaultFiltersSheet(
+            current = viewFilter,
+            packages = packages,
+            senders = senders,
+            onDismiss = { showFilters = false },
+            onApply = { q -> viewFilter = q; showFilters = false },
+            onClear = { viewFilter = VaultQuery(); showFilters = false },
+        )
+    }
+
+    if (showExportChoice) {
+        AlertDialog(
+            onDismissRequest = { showExportChoice = false },
+            title = { Text("Exportar") },
+            text = { Text("Exportar tudo o que está guardado, ou só o que bate com um filtro?") },
+            confirmButton = {
+                TextButton(onClick = { showExportChoice = false; export(items) }) { Text("Tudo") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportChoice = false; showExportFilters = true }) {
+                    Text("Com filtros…")
+                }
+            },
+        )
+    }
+
+    if (showExportFilters) {
+        VaultFiltersSheet(
+            current = VaultQuery(),
+            packages = packages,
+            senders = senders,
+            confirmLabel = "Exportar",
+            onDismiss = { showExportFilters = false },
+            onApply = { q -> showExportFilters = false; export(items.filter { it.matches(q) }) },
+            onClear = { showExportFilters = false; export(items) },
+        )
     }
 
     confirmDelete?.let { item ->

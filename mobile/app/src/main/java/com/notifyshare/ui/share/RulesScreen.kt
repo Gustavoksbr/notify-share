@@ -239,7 +239,7 @@ class RulesViewModel(
 fun RulesScreen(
     vm: RulesViewModel,
     nickname: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     onPickApps: () -> Unit,
     onOpenSystemAlerts: () -> Unit = {},
     title: String? = null,

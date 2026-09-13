@@ -8,7 +8,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -29,6 +32,7 @@ import com.notifyshare.ui.auth.LoginScreen
 import com.notifyshare.ui.auth.RegisterScreen
 import com.notifyshare.ui.shell.MainShell
 import com.notifyshare.ui.theme.NotifyShareTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -71,6 +75,15 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
     // "Adicionar conta": mostra o login mesmo com uma sessao ativa.
     var addingAccount by remember { mutableStateOf(false) }
 
+    // Social x Local: independente de login, sobrevive a trocar/adicionar conta.
+    val mode by container.appMode.flow.collectAsStateWithLifecycle(
+        initialValue = com.notifyshare.data.local.AppMode.SOCIAL,
+    )
+    val modeScope = androidx.compose.runtime.rememberCoroutineScope()
+    val onModeChange: (com.notifyshare.data.local.AppMode) -> Unit = { m ->
+        modeScope.launch { container.appMode.set(m) }
+    }
+
     // Criado sempre (barato). Antes ficava depois do early-return, e o
     // authComplete de um login anterior ainda ficava true — ao "adicionar conta"
     // o LaunchedEffect disparava na hora e voltava pra home sem mostrar o login.
@@ -101,6 +114,13 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
         }
     }
 
+    // Modo Local: cofre + permissões, sem conta. Independente de login —
+    // ganha de qualquer estado de sessão.
+    if (mode == com.notifyshare.data.local.AppMode.LOCAL) {
+        com.notifyshare.ui.shell.LocalShell(container, mode = mode, onModeChange = onModeChange)
+        return
+    }
+
     if (hasSession && !addingAccount) {
         MainShell(
             container = container,
@@ -111,22 +131,30 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
                 authViewModel.resetForm()
                 addingAccount = true
             },
+            mode = mode,
+            onModeChange = onModeChange,
         )
         return
     }
 
-    // "Adicionar conta": formulário em tela cheia, com Cancelar — não o shell.
+    // "Adicionar conta": formulário em tela cheia, com Cancelar — não o shell,
+    // sem o switcher (fluxo dedicado, preso a já estar logado em outra conta).
     if (addingAccount) {
         AuthNavHost(authViewModel, addingAccount = true, onCancelAdd = { addingAccount = false })
         return
     }
 
-    // Deslogado de verdade: shell de 2 abas (Entrar | Salvos). O cofre (Salvos)
-    // funciona sem conta e sem internet.
-    com.notifyshare.ui.shell.LoggedOutShell(
-        container = container,
-        authContent = { AuthNavHost(authViewModel, addingAccount = false, onCancelAdd = {}) },
-    )
+    // Social deslogado: switcher no topo + login preenchendo o resto — sem
+    // barra de baixo (só volta quando o usuário logar).
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.statusBarsPadding()) {
+            com.notifyshare.ui.shell.AppModeSwitcher(mode, onModeChange)
+            com.notifyshare.ui.common.AppWarningBanners(container)
+        }
+        Box(Modifier.weight(1f)) {
+            AuthNavHost(authViewModel, addingAccount = false, onCancelAdd = {})
+        }
+    }
 }
 
 @Composable
