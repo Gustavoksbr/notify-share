@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index, follow">
+<title>Excluir conta e dados — Notify Share</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1c1e21;
+    --muted: #5b6169;
+    --border: #e3e6ea;
+    --accent: #2f6feb;
+    --card: #f7f8fa;
+    --danger: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c;
+      --fg: #e7e9ec;
+      --muted: #9aa1ab;
+      --border: #2b2f36;
+      --accent: #6ea8ff;
+      --card: #1e2126;
+      --danger: #ff8a75;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 22px 96px;
+  }
+  header { margin-bottom: 32px; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 6px; }
+  h2 {
+    font-size: 1.18rem;
+    margin: 40px 0 12px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+  h3 { font-size: 1rem; margin: 22px 0 6px; }
+  p, li { color: var(--fg); }
+  a { color: var(--accent); }
+  .lead { color: var(--muted); }
+  .updated { color: var(--muted); font-size: 0.9rem; }
+  ol, ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 16px 0;
+  }
+  .card p:first-child { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 0.88rem; }
+  .callout {
+    background: var(--card);
+    border: 1px solid var(--accent);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 20px 0 28px;
+  }
+  .callout.danger { border-color: var(--danger); }
+  .callout p { margin: 0; }
+  .callout p + p { margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Excluir conta e dados — Notify Share</h1>
+    <p class="lead">
+      Desenvolvedor: Gustavo Kenzo Salesi. Aplicativo Android: <strong>Notify Share</strong>
+      (pacote <code>com.notifyshare</code>).
+    </p>
+    <p class="updated">Última atualização: 14 de setembro de 2026</p>
+  </header>
+
+  <h2 id="conta">Excluir a conta inteira</h2>
+  <p>Você pode pedir a exclusão da sua conta de duas formas:</p>
+
+  <h3>Pelo próprio app (imediato)</h3>
+  <ol>
+    <li>Abra o Notify Share e entre na sua conta.</li>
+    <li>Toque em <strong>Perfil</strong> (aba inferior).</li>
+    <li>Toque em <strong>Zona de perigo</strong>.</li>
+    <li>Toque em <strong>Excluir conta</strong> e confirme.</li>
+  </ol>
+  <div class="callout danger">
+    <p>A exclusão é <strong>imediata e irreversível</strong>. Não há período de carência nem forma de recuperar a conta depois de confirmada.</p>
+  </div>
+
+  <h3>Por e-mail (se você não tem mais o app instalado ou não consegue entrar na conta)</h3>
+  <p>
+    Escreva para <a href="mailto:gustavoksbr@gmail.com">gustavoksbr@gmail.com</a> a partir do
+    e-mail cadastrado na conta, pedindo a exclusão e informando o seu nickname no app. Respondemos
+    e confirmamos a exclusão em até 15 dias.
+  </p>
+
+  <h3>O que é excluído</h3>
+  <div class="card">
+    <ul>
+      <li>Dados da conta: nickname, e-mail, senha (hash) e identificador do login Google, se houver.</li>
+      <li>Amizades, solicitações de amizade, bloqueios e regras de compartilhamento criadas.</li>
+      <li>Histórico de notificações compartilhadas e mensagens de chat.</li>
+      <li>Tokens de notificação push (FCM) associados ao aparelho.</li>
+      <li>Relatórios de falha (Crashlytics) associados ao seu nickname deixam de receber novos envios; relatórios já enviados seguem a retenção padrão do Firebase (até 90 dias), sem nenhum conteúdo de notificação ou mensagem.</li>
+    </ul>
+  </div>
+  <p>
+    O <strong>Cofre local</strong> ("Salvos") do app não é afetado por essa exclusão porque ele nunca fica no
+    servidor — ele só existe no seu próprio aparelho e é apagado se você desinstalar o app.
+  </p>
+
+  <h2 id="dados">Excluir só uma parte dos dados, sem apagar a conta</h2>
+  <p>
+    Se você quer continuar usando o Notify Share mas quer limpar o seu histórico compartilhado,
+    dá pra fazer isso sem excluir a conta:
+  </p>
+  <ol>
+    <li>Abra o Notify Share e entre na sua conta.</li>
+    <li>Toque em <strong>Perfil</strong> → <strong>Zona de perigo</strong>.</li>
+    <li>Toque em <strong>Apagar histórico</strong> e confirme.</li>
+  </ol>
+  <p>Isso remove do servidor:</p>
+  <ul>
+    <li>O seu histórico de notificações compartilhadas (enviadas e recebidas).</li>
+  </ul>
+  <p>Permanecem intactos: a conta em si, amizades, regras de compartilhamento e mensagens de chat.</p>
+  <p>
+    Além disso, todo histórico de notificações compartilhadas é apagado automaticamente pelo
+    servidor <strong>7 dias</strong> após a entrega, mesmo sem nenhuma ação sua.
+  </p>
+
+  <h2>Baixar seus dados antes de excluir</h2>
+  <p>
+    Em <strong>Perfil → Privacidade e dados → Baixar meus dados</strong> você recebe um arquivo com
+    tudo o que o servidor guarda sobre a sua conta, antes de pedir a exclusão.
+  </p>
+
+  <footer>
+    Notify Share · <a href="mailto:gustavoksbr@gmail.com">gustavoksbr@gmail.com</a> ·
+    <a href="privacy.html">Política de Privacidade completa</a>
+  </footer>
+</main>
+</body>
+</html>
