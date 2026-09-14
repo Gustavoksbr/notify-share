@@ -17,11 +17,21 @@ val localProperties: Properties = Properties().apply {
 
 val googleClientId: String = localProperties.getProperty("GOOGLE_CLIENT_ID").orEmpty()
 // Client "Android" (nao o Web) — o unico tipo que aceita redirect com esquema
-// customizado (com.notifyshare:/...). Usado so no fallback de login pelo
-// navegador (GoogleWebAuth), quando o Credential Manager nao acha conta no
-// aparelho. Pegue o "ID do cliente" na pagina desse client no Google Cloud
-// Console (Credenciais > o client tipo Android usado no release).
+// customizado. Usado so no fallback de login pelo navegador (GoogleWebAuth),
+// quando o Credential Manager nao acha conta no aparelho. Pegue o "ID do
+// cliente" na pagina desse client no Google Cloud Console (Credenciais > o
+// client tipo Android usado no release).
 val googleAndroidClientId: String = localProperties.getProperty("GOOGLE_ANDROID_CLIENT_ID").orEmpty()
+
+// O Google NAO deixa escolher o esquema do redirect num client tipo Android —
+// ele e fixo, derivado do proprio client id: com.googleusercontent.apps.<ID>.
+// O "ativar esquema de URI personalizado" no Cloud Console so liga/desliga
+// esse comportamento (por isso a tela nao tem campo de texto pra digitar).
+val googleAndroidRedirectScheme: String =
+    googleAndroidClientId.substringBefore(".apps.googleusercontent.com")
+        .takeIf { it.isNotBlank() && it != googleAndroidClientId }
+        ?.let { "com.googleusercontent.apps.$it" }
+        ?: "com.notifyshare.unused" // placeholder inerte — sem GOOGLE_ANDROID_CLIENT_ID, o fallback so fica indisponivel
 
 // .env fica fora do controle de versao: ajustes de desenvolvimento que o dev
 // muda livremente sem mexer em build.gradle.kts (ver .env.example).
@@ -46,17 +56,18 @@ android {
         // canais de notificacao mudam o suficiente para virar um caso a parte.
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 5
+        versionName = "0.1.4"
 
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "GOOGLE_ANDROID_CLIENT_ID", "\"$googleAndroidClientId\"")
+        buildConfigField("String", "GOOGLE_ANDROID_REDIRECT_SCHEME", "\"$googleAndroidRedirectScheme\"")
         buildConfigField("String", "VAULT_PAGE_SIZE", "\"$vaultPageSize\"")
 
         // AppAuth registra sozinho, via manifest merge, uma activity que recebe
-        // esse esquema de volta do navegador (com.notifyshare:/oauth2redirect) —
-        // e o fallback do login Google quando não há conta no aparelho.
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.notifyshare"
+        // esse esquema de volta do navegador — e o fallback do login Google
+        // quando não há conta no aparelho (ver GoogleWebAuth).
+        manifestPlaceholders["appAuthRedirectScheme"] = googleAndroidRedirectScheme
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -169,6 +180,7 @@ dependencies {
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.google.identity.googleid)
     implementation(libs.openid.appauth)
+    implementation(libs.androidx.appcompat)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.junit)

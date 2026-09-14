@@ -32,9 +32,11 @@ import net.openid.appauth.ResponseTypeValues
  * audience válido também — o ID token que volta traz ELE, não o Web.
  *
  * No Google Cloud Console, esse client Android precisa ter, em
- * "Configurações avançadas" > "Esquema de URI personalizado":
- * `com.notifyshare:/oauth2redirect` cadastrado e salvo (pode levar de minutos
- * a horas para propagar, segundo o próprio aviso do Google ali).
+ * "Configurações avançadas", o checkbox "Ativar esquema de URI personalizado"
+ * marcado e salvo (pode levar de minutos a horas para propagar). O Google NÃO
+ * deixa escolher esse esquema — ele é fixo, derivado do próprio client id
+ * (`com.googleusercontent.apps.<id>`); é por isso que aquela tela não tem
+ * campo de texto pra digitar nada, só o checkbox liga/desliga.
  */
 class GoogleWebAuth(context: Context) {
 
@@ -46,7 +48,7 @@ class GoogleWebAuth(context: Context) {
         Uri.parse("https://oauth2.googleapis.com/token"),
     )
 
-    private val redirectUri: Uri = Uri.parse("com.notifyshare:/oauth2redirect")
+    private val redirectUri: Uri = Uri.parse("${BuildConfig.GOOGLE_ANDROID_REDIRECT_SCHEME}:/oauth2redirect")
 
     val available: Boolean get() = BuildConfig.GOOGLE_ANDROID_CLIENT_ID.isNotBlank()
 

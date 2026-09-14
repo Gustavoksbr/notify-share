@@ -79,6 +79,25 @@
             </intent-filter>
         </service>
 
+        <!-- Sobrescreve so o tema da activity que o AppAuth injeta via merge de
+             manifest (fallback de login pelo navegador): ela exige um tema
+             Theme.AppCompat, e o app inteiro usa Compose/Theme.Material puro —
+             sem isto, crasha ao voltar do navegador (ver Theme.AppAuthRedirect
+             em themes.xml). tools:node="replace" porque precisamos redeclarar o
+             intent-filter inteiro; senao o merger reclama de atributo conflitante. -->
+        <activity
+            android:name="net.openid.appauth.RedirectUriReceiverActivity"
+            android:exported="true"
+            android:theme="@style/Theme.AppAuthRedirect"
+            tools:node="replace">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${appAuthRedirectScheme}" />
+            </intent-filter>
+        </activity>
+
         <!-- Botao "Desligar" da notificacao fixa: desliga o interruptor mestre. -->
         <receiver
             android:name=".service.ServiceControlReceiver"

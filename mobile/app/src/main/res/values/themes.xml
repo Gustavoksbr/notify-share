@@ -11,4 +11,10 @@
         <item name="android:navigationBarColor">@color/surface</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
+    <!-- So para a RedirectUriReceiverActivity do AppAuth (fallback de login pelo
+         navegador): ela precisa de um tema Theme.AppCompat (ou descendente) —
+         sem isso o app crasha ao voltar do navegador com "You need to use a
+         Theme.AppCompat theme". Nao afeta o resto do app, que usa Compose puro. -->
+    <style name="Theme.AppAuthRedirect" parent="Theme.AppCompat.NoActionBar" />
 </resources>
