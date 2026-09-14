@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -50,88 +52,99 @@ fun VaultFiltersSheet(
     var showCalendar by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text("Filtros", style = MaterialTheme.typography.titleLarge)
+        // Conteúdo rolável + rodapé fixo: com muitos remetentes/apps/tipos
+        // marcados, o conteúdo pode passar da altura da folha — sem scroll aqui,
+        // o botão de confirmar ficava fora da tela (parecia ter sumido).
+        Column(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("Filtros", style = MaterialTheme.typography.titleLarge)
 
-            SectionLabel("Período")
-            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("all" to "Tudo", "today" to "Hoje", "7d" to "7 dias").forEach { (value, label) ->
-                    val on = draft.period == value
+                SectionLabel("Período")
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("all" to "Tudo", "today" to "Hoje", "7d" to "7 dias").forEach { (value, label) ->
+                        val on = draft.period == value
+                        FilterChip(
+                            selected = on,
+                            onClick = { draft = draft.copy(period = value) },
+                            label = { Text(label) },
+                        )
+                    }
                     FilterChip(
-                        selected = on,
-                        onClick = { draft = draft.copy(period = value) },
-                        label = { Text(label) },
+                        selected = draft.period == "custom",
+                        onClick = { showCalendar = true },
+                        label = {
+                            Text(
+                                if (draft.period == "custom" && draft.fromDate != null) {
+                                    if (draft.toDate != null && draft.toDate != draft.fromDate) {
+                                        "${draft.fromDate} a ${draft.toDate}"
+                                    } else {
+                                        "${draft.fromDate}"
+                                    }
+                                } else {
+                                    "Escolher data…"
+                                },
+                            )
+                        },
                     )
                 }
-                FilterChip(
-                    selected = draft.period == "custom",
-                    onClick = { showCalendar = true },
-                    label = {
-                        Text(
-                            if (draft.period == "custom" && draft.fromDate != null) {
-                                if (draft.toDate != null && draft.toDate != draft.fromDate) {
-                                    "${draft.fromDate} a ${draft.toDate}"
-                                } else {
-                                    "${draft.fromDate}"
-                                }
-                            } else {
-                                "Escolher data…"
-                            },
-                        )
-                    },
-                )
-            }
 
-            SectionLabel("Tipo")
-            ChipRow(
-                options = listOf("message" to "Mensagens", "system" to "Alertas do sistema"),
-                selected = draft.type,
-                onSelect = { draft = draft.copy(type = it) },
-                allowNone = true,
-            )
-
-            if (senders.isNotEmpty()) {
-                SectionLabel("Remetente")
+                SectionLabel("Tipo")
                 ChipRow(
-                    options = senders.map { it to it },
-                    selected = draft.sender,
-                    onSelect = { draft = draft.copy(sender = it) },
+                    options = listOf("message" to "Mensagens", "system" to "Alertas do sistema"),
+                    selected = draft.type,
+                    onSelect = { draft = draft.copy(type = it) },
                     allowNone = true,
                 )
-            }
 
-            if (packages.isNotEmpty()) {
-                SectionLabel("App")
-                if (packages.size > 8) {
-                    OutlinedTextField(
-                        value = appQuery,
-                        onValueChange = { appQuery = it },
-                        placeholder = { Text("Buscar app") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.fillMaxWidth(),
+                if (senders.isNotEmpty()) {
+                    SectionLabel("Remetente")
+                    ChipRow(
+                        options = senders.map { it to it },
+                        selected = draft.sender,
+                        onSelect = { draft = draft.copy(sender = it) },
+                        allowNone = true,
                     )
                 }
-                val shown = packages
-                    .filter { appQuery.isBlank() || prettyPackage(it).contains(appQuery, ignoreCase = true) }
-                LazyColumn(Modifier.heightIn(max = 220.dp)) {
-                    items(shown, key = { it }) { pkg ->
-                        val on = draft.packageName == pkg
-                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            FilterChip(
-                                selected = on,
-                                onClick = { draft = draft.copy(packageName = if (on) null else pkg) },
-                                label = { Text(prettyPackage(pkg)) },
-                            )
+
+                if (packages.isNotEmpty()) {
+                    SectionLabel("App")
+                    if (packages.size > 8) {
+                        OutlinedTextField(
+                            value = appQuery,
+                            onValueChange = { appQuery = it },
+                            placeholder = { Text("Buscar app") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    val shown = packages
+                        .filter { appQuery.isBlank() || prettyPackage(it).contains(appQuery, ignoreCase = true) }
+                    LazyColumn(Modifier.heightIn(max = 220.dp)) {
+                        items(shown, key = { it }) { pkg ->
+                            val on = draft.packageName == pkg
+                            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                FilterChip(
+                                    selected = on,
+                                    onClick = { draft = draft.copy(packageName = if (on) null else pkg) },
+                                    label = { Text(prettyPackage(pkg)) },
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
                 OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) { Text("Limpar") }
                 Button(onClick = { onApply(draft) }, modifier = Modifier.weight(1f)) { Text(confirmLabel) }
             }

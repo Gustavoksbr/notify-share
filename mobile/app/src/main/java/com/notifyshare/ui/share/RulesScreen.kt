@@ -37,7 +37,6 @@ import com.notifyshare.data.remote.RuleDto
 import com.notifyshare.data.remote.SenderDto
 import com.notifyshare.ui.common.EmptyState
 import com.notifyshare.ui.common.LoadingBox
-import com.notifyshare.ui.common.NotificationAccessWarning
 import com.notifyshare.ui.common.ScreenTitle
 import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.format.friendlyPackage
@@ -241,7 +240,6 @@ fun RulesScreen(
     nickname: String,
     onBack: (() -> Unit)? = null,
     onPickApps: () -> Unit,
-    onOpenSystemAlerts: () -> Unit = {},
     title: String? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -263,8 +261,6 @@ fun RulesScreen(
                 )
             },
         )
-
-        NotificationAccessWarning()
 
         Text(
             "Copiar configuração de outro compartilhamento",
@@ -303,7 +299,6 @@ fun RulesScreen(
                             onOpenContactPicker = { contactPickerFor = rule.packageName },
                             onCopyApp = { copyTarget = CopyTarget.App(rule.packageName) },
                             onCopySenders = { copyTarget = CopyTarget.Senders(rule.packageName) },
-                            onOpenSystemAlerts = onOpenSystemAlerts,
                         )
                     }
                   }
@@ -398,9 +393,7 @@ internal fun RuleCard(
     onOpenContactPicker: () -> Unit = {},
     onCopyApp: (() -> Unit)? = null,
     onCopySenders: (() -> Unit)? = null,
-    onOpenSystemAlerts: (() -> Unit)? = null,
 ) {
-    val isSystemPhone = rule.packageName == com.notifyshare.data.local.PKG_SYSTEM_PHONE
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -430,24 +423,7 @@ internal fun RuleCard(
             )
         }
 
-        if (isSystemPhone) {
-            if (rule.enabled) {
-                Text(
-                    "Alertas do próprio aparelho: bateria, carregador, reinício. " +
-                        "Você escolhe quais são enviados.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NotifyShareColors.muted,
-                )
-                onOpenSystemAlerts?.let { cb ->
-                    Text(
-                        "Configurar alertas do celular",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable(onClick = cb).padding(vertical = 4.dp),
-                    )
-                }
-            }
-        } else if (rule.enabled) {
+        if (rule.enabled) {
             SegmentedRow(
                 options = listOf("content" to "Conteúdo", "sender_only" to "Só aviso"),
                 selected = if (rule.contentMode == "paused") "content" else rule.contentMode,
@@ -520,7 +496,7 @@ internal fun RuleCard(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            onCopyApp?.takeIf { !isSystemPhone }?.let { cb ->
+            onCopyApp?.let { cb ->
                 Text(
                     "Copiar de…",
                     style = MaterialTheme.typography.labelMedium,

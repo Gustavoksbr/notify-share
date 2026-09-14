@@ -158,7 +158,7 @@ interface NotifyShareApi {
         @Query("period") period: String = "all",
         @Query("page") page: Int = 0,
         @Query("size") size: Int = 50,
-    ): Response<List<FeedItemDto>>
+    ): Response<FeedPageDto>
 
     @GET("events/conversation")
     suspend fun conversationEvents(
@@ -170,7 +170,7 @@ interface NotifyShareApi {
         @Query("period") period: String = "all",
         @Query("page") page: Int = 0,
         @Query("size") size: Int = 50,
-    ): Response<List<FeedItemDto>>
+    ): Response<FeedPageDto>
 
     @POST("events/deliveries/{id}/read")
     suspend fun markEventRead(@Path("id") id: String): Response<Unit>

@@ -41,10 +41,6 @@ import kotlinx.coroutines.withContext
 
 private data class AppEntry(val packageName: String, val label: String)
 
-private val SYNTHETIC = listOf(
-    AppEntry(com.notifyshare.data.local.PKG_SYSTEM_PHONE, "Meu celular"),
-)
-
 @Composable
 fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, title: String? = null) {
     val context = LocalContext.current
@@ -74,10 +70,8 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, ti
 
     val labelByPkg = remember(apps) { apps.associate { it.packageName to it.label } }
 
-    val systemEntries = remember(alreadyAdded) { SYNTHETIC.filter { it.packageName !in alreadyAdded } }
-
     // Apps que deixam escolher remetente (WhatsApp etc. — ver AppCapabilities):
-    // ganham secao propria, logo abaixo de "Meu celular", em destaque.
+    // ganham secao propria em destaque.
     val manageableEntries = remember(apps, alreadyAdded) {
         apps.filter {
             it.packageName !in alreadyAdded &&
@@ -106,8 +100,6 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, ti
     ) { pad ->
     Column(Modifier.fillMaxSize().padding(pad)) {
         ScreenTitle(title ?: "Apps para @$nickname", onBack = onBack)
-
-        com.notifyshare.ui.common.NotificationAccessWarning()
 
         OutlinedTextField(
             value = query,
@@ -145,12 +137,6 @@ fun AppPickerScreen(vm: RulesViewModel, nickname: String, onBack: () -> Unit, ti
         }
 
         LazyColumn {
-            val sysShown = systemEntries.filter { matchesQuery(it) }
-            if (sysShown.isNotEmpty()) {
-                item { SectionLabel("Sistema") }
-                items(sysShown, key = { "s_${it.packageName}" }) { e -> AppRow(e) { add(e) } }
-            }
-
             val manageableShown = manageableEntries.filter { matchesQuery(it) }
             if (manageableShown.isNotEmpty()) {
                 item { SectionLabel("Apps com remetente") }

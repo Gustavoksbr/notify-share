@@ -13,10 +13,9 @@ import com.notifyshare.ui.share.RulesScreen
 import com.notifyshare.ui.share.RulesViewModel
 
 /**
- * Sub-navegação de "o que o cofre guarda": regras ↔ seletor de apps ↔ alertas
- * do sistema. É a aba "Apps" do modo Local, separada de "Salvos" (a timeline
- * em si) — configurar o quê guardar não precisa ficar grudado em ver o que já
- * foi guardado.
+ * Sub-navegação de "o que o cofre guarda": regras ↔ seletor de apps. É a aba
+ * "Apps" do modo Local, separada de "Salvos" (a timeline em si) — configurar
+ * o quê guardar não precisa ficar grudado em ver o que já foi guardado.
  */
 @Composable
 fun VaultAppsNav(container: AppContainer) {
@@ -31,7 +30,6 @@ fun VaultAppsNav(container: AppContainer) {
                 title = "Apps",
                 onBack = null,
                 onPickApps = { nav.navigate("apps") },
-                onOpenSystemAlerts = { nav.navigate("system-alerts") },
             )
         }
         composable("apps") {
@@ -46,9 +44,6 @@ fun VaultAppsNav(container: AppContainer) {
                 title = "Adicionar ao cofre",
                 onBack = { nav.popBackStack() },
             )
-        }
-        composable("system-alerts") {
-            com.notifyshare.ui.settings.SystemAlertsScreen(container, onBack = { nav.popBackStack() })
         }
     }
 }

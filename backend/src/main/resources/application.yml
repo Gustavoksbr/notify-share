@@ -89,7 +89,12 @@ notifyshare:
 
   google:
     # Client ID "Web application" do Google Cloud. Vazio = login com Google off.
+    # E o audience (aud) esperado no ID token do Credential Manager.
     client-id: ${GOOGLE_CLIENT_ID:}
+    # Client ID tipo "Android" — audience do ID token quando o login cai no
+    # fallback pelo navegador (GoogleWebAuth), porque só o client Android aceita
+    # redirect com esquema customizado (com.notifyshare:/...); o Web client recusa.
+    android-client-id: ${GOOGLE_ANDROID_CLIENT_ID:}
 
   fcm:
     # Com enabled=false, ou sem credencial valida, o envio de push vira no-op e

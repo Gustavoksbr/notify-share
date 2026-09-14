@@ -53,12 +53,12 @@ import com.notifyshare.ui.chat.ChatScreen
 import com.notifyshare.ui.chat.ChatViewModel
 import com.notifyshare.ui.common.Avatar
 import com.notifyshare.ui.common.LoadingBox
-import com.notifyshare.ui.common.NotificationAccessWarning
 import com.notifyshare.ui.common.OutlinedActionButton
 import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.common.StatusDot
 import com.notifyshare.ui.common.prettyPackage
 import com.notifyshare.ui.format.relativeShort
+import com.notifyshare.ui.format.shortTime
 import com.notifyshare.ui.notifications.PersonNotificationsScreen
 import com.notifyshare.ui.notifications.PersonNotificationsViewModel
 import com.notifyshare.ui.share.RecipientRulesViewModel
@@ -70,6 +70,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Resolve os grants estabelecidos (nos dois sentidos) com uma pessoa e cuida das
@@ -169,10 +172,13 @@ fun PersonHubScreen(
     onBack: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenAppPicker: (grantId: String) -> Unit,
-    onOpenSystemAlerts: () -> Unit = {},
     /** Chegou aqui por "responder notificação" de fora do hub (Feed, notificações
      *  da pessoa) — pre-anexa essa notificação na primeira composição do chat. */
     initialLinkedEvent: String? = null,
+    /** Chegou aqui clicando numa notificação (Feed) — realça ela na aba
+     *  Notificações assim que abre, igual ao toque num link de notificação
+     *  dentro da conversa. */
+    initialHighlightEvent: String? = null,
 ) {
     val hubVm: PersonHubViewModel = viewModel(factory = PersonHubViewModelFactory(container, nickname))
     val hub by hubVm.state.collectAsStateWithLifecycle()
@@ -192,10 +198,49 @@ fun PersonHubScreen(
 
     var tabIndex by rememberSaveable { mutableIntStateOf(tabFromArg(initialTab).ordinal) }
     val tab = HubTab.values()[tabIndex]
-    var highlightEvent by remember { mutableStateOf<String?>(null) }
+    var highlightEvent by remember { mutableStateOf(initialHighlightEvent) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val exportScope = androidx.compose.runtime.rememberCoroutineScope()
     var exporting by remember { mutableStateOf(false) }
+    val notifState by notifVm.state.collectAsStateWithLifecycle()
+
+    // Exportar e uma escolha em duas etapas: direcao (o que ele manda / o que eu
+    // mando / os dois), depois escopo (tudo ou so o que bate com um filtro) —
+    // mesma anatomia do fluxo de exportacao de Salvos.
+    var showExportDirectionChoice by remember { mutableStateOf(false) }
+    var exportDirection by remember { mutableStateOf<String?>(null) }
+    var showExportScopeChoice by remember { mutableStateOf(false) }
+    var showExportFilters by remember { mutableStateOf(false) }
+
+    fun runExport(direction: String, query: com.notifyshare.data.FeedQuery) {
+        exporting = true
+        exportScope.launch {
+            val directionsToFetch = if (direction == "both") listOf("received", "sent") else listOf(direction)
+            val parts = directionsToFetch.map { d ->
+                d to container.feedRepository.fullConversation(nickname, d, query)
+            }
+            exporting = false
+            if (parts.all { it.second != null }) {
+                val nonNullParts = parts.map { (d, rows) -> d to rows!! }
+                val suffix = when (direction) {
+                    "received" -> "-recebidas"
+                    "sent" -> "-enviadas"
+                    else -> ""
+                }
+                com.notifyshare.ui.common.shareTextExport(
+                    context,
+                    "notificacoes-$nickname$suffix.json",
+                    buildNotificationsExportJson(nonNullParts),
+                    mime = "application/json",
+                )
+            } else {
+                android.widget.Toast.makeText(
+                    context, "Não deu para exportar agora", android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -230,27 +275,13 @@ fun PersonHubScreen(
                     )
                 }
             }
-            if (tab == HubTab.CONVERSA && !exporting) {
+            if (tab == HubTab.NOTIFICACOES && !exporting) {
                 Icon(
                     NotifyIcons.Export,
-                    "Exportar conversa",
+                    "Baixar notificações",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .clickable {
-                            exporting = true
-                            chatVm.exportTranscript { text ->
-                                exporting = false
-                                if (text != null) {
-                                    com.notifyshare.ui.common.shareTextExport(
-                                        context, "conversa-$nickname.txt", text,
-                                    )
-                                } else {
-                                    android.widget.Toast.makeText(
-                                        context, "Não deu para exportar agora", android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
-                        }
+                        .clickable { showExportDirectionChoice = true }
                         .padding(8.dp),
                 )
             }
@@ -308,8 +339,12 @@ fun PersonHubScreen(
                     nickname = nickname,
                     onBack = onBack,
                     highlightEventId = highlightEvent,
-                    onReplyToNotification = { evId ->
-                        chatVm.linkEvent(evId)
+                    onReplyToNotification = { row ->
+                        chatVm.linkEvent(
+                            row.eventId,
+                            label = "${prettyPackage(row.packageName)} · ${shortTime(row.occurredAt)}",
+                            preview = com.notifyshare.ui.format.eventBody(row),
+                        )
                         tabIndex = HubTab.CONVERSA.ordinal
                     },
                     embedded = true,
@@ -322,10 +357,76 @@ fun PersonHubScreen(
                     onOffer = hubVm::offer,
                     onRequest = hubVm::request,
                     onOpenAppPicker = onOpenAppPicker,
-                    onOpenSystemAlerts = onOpenSystemAlerts,
                 )
             }
         }
+    }
+
+    if (showExportDirectionChoice) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showExportDirectionChoice = false },
+            title = { Text("O que exportar?") },
+            text = { Text("Só o que @$nickname te manda, só o que você manda pra ela, ou os dois?") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    exportDirection = "received"
+                    showExportDirectionChoice = false
+                    showExportScopeChoice = true
+                }) { Text("O que ele/ela manda") }
+            },
+            dismissButton = {
+                Row {
+                    androidx.compose.material3.TextButton(onClick = {
+                        exportDirection = "sent"
+                        showExportDirectionChoice = false
+                        showExportScopeChoice = true
+                    }) { Text("O que eu mando") }
+                    androidx.compose.material3.TextButton(onClick = {
+                        exportDirection = "both"
+                        showExportDirectionChoice = false
+                        showExportScopeChoice = true
+                    }) { Text("Os dois") }
+                }
+            },
+        )
+    }
+
+    if (showExportScopeChoice) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showExportScopeChoice = false },
+            title = { Text("Exportar") },
+            text = { Text("Exportar tudo, ou só o que bate com um filtro?") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showExportScopeChoice = false
+                    exportDirection?.let { runExport(it, com.notifyshare.data.FeedQuery()) }
+                }) { Text("Tudo") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showExportScopeChoice = false
+                    showExportFilters = true
+                }) { Text("Com filtros…") }
+            },
+        )
+    }
+
+    if (showExportFilters) {
+        com.notifyshare.ui.common.NotificationFiltersSheet(
+            current = com.notifyshare.data.FeedQuery(),
+            people = emptyList(),
+            packages = notifState.knownPackages,
+            confirmLabel = "Exportar",
+            onDismiss = { showExportFilters = false },
+            onApply = { q ->
+                showExportFilters = false
+                exportDirection?.let { runExport(it, q) }
+            },
+            onClear = {
+                showExportFilters = false
+                exportDirection?.let { runExport(it, com.notifyshare.data.FeedQuery()) }
+            },
+        )
     }
 }
 
@@ -338,7 +439,6 @@ private fun PersonAppsTab(
     onOffer: () -> Unit,
     onRequest: () -> Unit,
     onOpenAppPicker: (grantId: String) -> Unit,
-    onOpenSystemAlerts: () -> Unit = {},
 ) {
     if (hub.loading) {
         LoadingBox()
@@ -350,7 +450,6 @@ private fun PersonAppsTab(
     var sub by rememberSaveable { mutableIntStateOf(0) }
 
     Column(Modifier.fillMaxSize()) {
-        NotificationAccessWarning()
         TabRow(selectedTabIndex = sub, containerColor = MaterialTheme.colorScheme.surface) {
             Tab(selected = sub == 0, onClick = { sub = 0 }, text = { Text("Eu envio") })
             Tab(selected = sub == 1, onClick = { sub = 1 }, text = { Text("Ele envia") })
@@ -360,7 +459,7 @@ private fun PersonAppsTab(
             if (sub == 0) {
                 val sharerGrantId = hub.sharerGrantId
                 if (sharerGrantId != null) {
-                    SharerAppsSection(hubEntry, container, sharerGrantId, onOpenAppPicker, onOpenSystemAlerts)
+                    SharerAppsSection(hubEntry, container, sharerGrantId, onOpenAppPicker)
                 } else {
                     AppsTabEmpty(
                         "Você ainda não compartilha com @$nickname.",
@@ -406,7 +505,6 @@ private fun SharerAppsSection(
     container: AppContainer,
     grantId: String,
     onOpenAppPicker: (grantId: String) -> Unit,
-    onOpenSystemAlerts: () -> Unit = {},
 ) {
     val vm: RulesViewModel = viewModel(
         viewModelStoreOwner = hubEntry,
@@ -470,7 +568,6 @@ private fun SharerAppsSection(
                             onOpenContactPicker = { contactPickerFor = rule.packageName },
                             onCopyApp = { copyTarget = com.notifyshare.ui.share.CopyTarget.App(rule.packageName) },
                             onCopySenders = { copyTarget = com.notifyshare.ui.share.CopyTarget.Senders(rule.packageName) },
-                            onOpenSystemAlerts = onOpenSystemAlerts,
                         )
                     }
                 }
@@ -579,4 +676,47 @@ private fun RecipientNotifySection(
             }
         }
     }
+}
+
+@Serializable
+private data class NotificationExportItem(
+    /** sent | received */
+    val direction: String,
+    val app: String,
+    val occurredAt: String,
+    val title: String?,
+    val body: String,
+)
+
+@Serializable
+private data class NotificationsExport(
+    val exportedAt: String,
+    val count: Int,
+    val items: List<NotificationExportItem>,
+)
+
+private val exportJson = Json { prettyPrint = true }
+
+/** Junta as direções escolhidas (sent e/ou received) num JSON só, mais novo primeiro. */
+private fun buildNotificationsExportJson(
+    parts: List<Pair<String, List<com.notifyshare.data.remote.FeedItemDto>>>,
+): String {
+    val items = parts
+        .flatMap { (direction, rows) -> rows.map { direction to it } }
+        .sortedByDescending { it.second.occurredAt }
+        .map { (direction, row) ->
+            NotificationExportItem(
+                direction = direction,
+                app = com.notifyshare.ui.format.friendlyPackage(row.packageName),
+                occurredAt = row.occurredAt,
+                title = com.notifyshare.ui.format.eventTitle(row).takeIf { it.isNotBlank() },
+                body = com.notifyshare.ui.format.eventBody(row),
+            )
+        }
+    val payload = NotificationsExport(
+        exportedAt = java.time.Instant.now().toString(),
+        count = items.size,
+        items = items,
+    )
+    return exportJson.encodeToString(payload)
 }

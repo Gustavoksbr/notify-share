@@ -15,6 +15,11 @@ sealed interface GoogleSignInResult {
     data class Token(val idToken: String) : GoogleSignInResult
     data object Cancelled : GoogleSignInResult
     data class Error(val message: String) : GoogleSignInResult
+    /** Nao e erro de verdade: so quer dizer "sem conta cadastrada no aparelho
+     *  pro Credential Manager escolher". O chamador deve cair pro login via
+     *  navegador (ver GoogleWebAuth), do jeito que um site faz numa aba
+     *  anonima — nao faz sentido travar o usuario com uma mensagem de erro. */
+    data object NoAccountOnDevice : GoogleSignInResult
 }
 
 /**
@@ -52,7 +57,7 @@ class GoogleSignIn(private val context: Context) {
         } catch (e: GetCredentialCancellationException) {
             GoogleSignInResult.Cancelled
         } catch (e: NoCredentialException) {
-            GoogleSignInResult.Error("Nenhuma conta Google no aparelho. Adicione uma nas Configuracoes.")
+            GoogleSignInResult.NoAccountOnDevice
         } catch (e: GetCredentialException) {
             GoogleSignInResult.Error(e.message ?: "Falha no login com Google")
         }

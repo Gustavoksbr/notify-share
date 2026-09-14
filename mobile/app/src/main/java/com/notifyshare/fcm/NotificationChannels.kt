@@ -24,18 +24,18 @@ object NotificationChannels {
         val manager = context.getSystemService<NotificationManager>() ?: return
         manager.createNotificationChannels(
             listOf(
-                NotificationChannel(EVENTS, "Notificacoes compartilhadas", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "O que as pessoas escolheram compartilhar com voce"
+                NotificationChannel(EVENTS, "Notificações compartilhadas", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "O que as pessoas escolheram compartilhar com você"
                 },
                 NotificationChannel(MESSAGES, "Mensagens", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "Conversas dentro do Notify Share"
                 },
-                NotificationChannel(SERVICE, "Servico ativo", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Aviso fixo enquanto ha compartilhamento ativo"
+                NotificationChannel(SERVICE, "Serviço ativo", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Aviso fixo enquanto há compartilhamento ativo"
                     setShowBadge(false)
                 },
                 NotificationChannel(ALERTS, "Avisos do app", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "Quando algo precisa da sua atencao"
+                    description = "Quando algo precisa da sua atenção"
                 },
             )
         )

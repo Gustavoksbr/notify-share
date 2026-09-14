@@ -23,6 +23,13 @@ import java.time.Instant
  *
  * O filtro por remetente sai do MessagingStyle: WhatsApp, Telegram, Signal,
  * Messenger e Discord carregam um objeto Person por mensagem.
+ *
+ * Nem todo app posta uma notificacao nova por item: alguns (e-mail, apps de
+ * sistema) reescrevem UMA notificacao so, em estilo "caixa de entrada"
+ * (InboxStyle/EXTRA_TEXT_LINES), pra mostrar "3 novos e-mails" com uma linha
+ * por item. Cada reescrita ainda dispara onNotificationPosted de novo — o que
+ * muda e que o titulo/postTime as vezes ficam iguais entre uma atualizacao e
+ * outra, entao o dedupKey no de content evita tratar isso como duplicata.
  */
 class NotificationRelayService : NotificationListenerService() {
 
@@ -42,8 +49,18 @@ class NotificationRelayService : NotificationListenerService() {
 
         val extras = n.extras
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
-        val plainText = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
-            ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+        // InboxStyle: uma linha por item acumulado, a mais nova por ultimo. So
+        // usada se nao houver MessagingStyle (checado abaixo) — quando os dois
+        // existem, a mensagem e a fonte mais especifica.
+        val lastInboxLine = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            ?.map { it.toString() }
+            ?.lastOrNull { it.isNotBlank() }
+        // BIG_TEXT e o texto que aparece so quando a notificacao e expandida
+        // (o "v"/"^" no exemplo do Gmail) — quando existe, e sempre o
+        // conteudo mais completo, entao tem prioridade sobre o EXTRA_TEXT
+        // (resumido, mostrado com a notificacao recolhida).
+        val plainText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+            ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
 
         val messaging = runCatching {
             NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
@@ -55,13 +72,17 @@ class NotificationRelayService : NotificationListenerService() {
         }
 
         val sender = lastMessage?.person?.name?.toString() ?: title
-        val body = lastMessage?.text?.toString() ?: plainText ?: return
+        val body = lastMessage?.text?.toString() ?: lastInboxLine ?: plainText ?: return
         if (body.isBlank()) return
 
         val occurredMillis = lastMessage?.timestamp ?: sbn.postTime
         val occurredAt = Instant.ofEpochMilli(occurredMillis).toString()
         val senderHash = sender?.takeIf { it.isNotBlank() }?.let(::hashSender)
-        val dedupKey = "${sbn.packageName}|${senderHash ?: "-"}|$occurredMillis"
+        // Inclui um hash do corpo: sem isso, um app que reescreve a MESMA
+        // notificacao (InboxStyle) sem mudar o postTime nem o titulo faria a
+        // atualizacao seguinte colidir com a anterior e ser descartada como
+        // duplicata (local e no servidor sao idempotentes por dedupKey).
+        val dedupKey = "${sbn.packageName}|${senderHash ?: "-"}|$occurredMillis|${body.hashCode()}"
 
         val appLabel = runCatching {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()

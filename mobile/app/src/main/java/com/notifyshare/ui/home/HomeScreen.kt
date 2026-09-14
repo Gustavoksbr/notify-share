@@ -96,7 +96,7 @@ fun HomeScreen(viewModel: HomeViewModel, modifier: Modifier = Modifier) {
 
             else -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(
-                    text = state.errorMessage ?: "Nao foi possivel carregar o perfil",
+                    text = state.errorMessage ?: "Não foi possível carregar o perfil",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )

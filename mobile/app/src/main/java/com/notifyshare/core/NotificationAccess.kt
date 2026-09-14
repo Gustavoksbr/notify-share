@@ -10,9 +10,8 @@ import android.provider.Settings
  * nas Configuracoes, e o Android a REVOGA quando o app e reinstalado ou trocado
  * — entao vale checar sempre, nao so no onboarding.
  *
- * Sem ela, eventos de bateria/Wi-Fi ainda saem (vem de um BroadcastReceiver),
- * mas nenhuma notificacao de app e capturada. Foi exatamente isso que fez o
- * compartilhamento "nao funcionar" apos instalar o build de producao.
+ * Sem ela, nenhuma notificacao de app e capturada. Foi exatamente isso que fez
+ * o compartilhamento "nao funcionar" apos instalar o build de producao.
  */
 object NotificationAccess {
 

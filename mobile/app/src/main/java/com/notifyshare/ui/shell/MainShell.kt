@@ -36,15 +36,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.remember
 import com.notifyshare.AppContainer
-import com.notifyshare.ui.PersonNotificationsViewModelFactory
 import com.notifyshare.ui.RulesViewModelFactory
 import com.notifyshare.ui.TabViewModelFactory
 import com.notifyshare.ui.feed.FeedScreen
 import com.notifyshare.ui.feed.FeedViewModel
 import com.notifyshare.ui.friends.FriendsScreen
 import com.notifyshare.ui.friends.FriendsViewModel
-import com.notifyshare.ui.notifications.PersonNotificationsScreen
-import com.notifyshare.ui.notifications.PersonNotificationsViewModel
 import com.notifyshare.ui.onboarding.PermissionsScreen
 import com.notifyshare.ui.profile.ProfileScreen
 import com.notifyshare.ui.profile.ProfileViewModel
@@ -58,20 +55,11 @@ import com.notifyshare.ui.share.ShareViewModel
 import com.notifyshare.ui.theme.NotifyIcons
 import kotlinx.coroutines.launch
 
-/** Compartilha o JSON exportado via a folha de compartilhamento do sistema. */
+/** Compartilha o JSON exportado, gerando um arquivo .json de verdade. */
 private fun shareExport(context: android.content.Context, text: String) {
-    runCatching {
-        context.startActivity(
-            android.content.Intent.createChooser(
-                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                    type = "application/json"
-                    putExtra(android.content.Intent.EXTRA_TITLE, "notify-share-dados.json")
-                    putExtra(android.content.Intent.EXTRA_TEXT, text)
-                },
-                "Salvar meus dados",
-            ),
-        )
-    }
+    com.notifyshare.ui.common.shareTextExport(
+        context, "notify-share-dados.json", text, mime = "application/json",
+    )
 }
 
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
@@ -204,11 +192,12 @@ fun MainShell(
         },
     ) { padding ->
         Column(Modifier.padding(padding)) {
-            com.notifyshare.ui.shell.AppModeSwitcher(mode, onModeChange)
             com.notifyshare.ui.common.AppWarningBanners(
                 container = container,
                 onOpenPermissions = { nav.navigate("permissions") },
             )
+            com.notifyshare.ui.shell.AppModeSwitcher(mode, onModeChange)
+            com.notifyshare.ui.common.ReceiveWarningBanner(onOpenPermissions = { nav.navigate("permissions") })
             NavHost(
                 navController = nav,
                 startDestination = Tab.Feed.route,
@@ -216,7 +205,9 @@ fun MainShell(
             composable(Tab.Feed.route) {
                 FeedScreen(
                     vm = feedVm,
-                    onOpenPerson = { nick -> nav.navigate("person/$nick?from=feed") },
+                    onOpenPerson = { nick, eventId ->
+                        nav.navigate("hub/$nick/notificacoes?highlightEvent=$eventId")
+                    },
                     onReplyToNotification = { eventId, from ->
                         nav.navigate("hub/$from/conversa?linkedEvent=$eventId")
                     },
@@ -236,7 +227,7 @@ fun MainShell(
                     onOpenOutgoingRequests = { nav.navigate("requests-outgoing") },
                     onOpenRules = { grantId, nick -> nav.navigate("rules/$grantId/$nick") },
                     onOpenNotifyRules = { grantId, nick -> nav.navigate("notify-rules/$grantId/$nick") },
-                    onOpenNotifications = { nick -> nav.navigate("person/$nick?from=share") },
+                    onOpenNotifications = { nick -> nav.navigate("hub/$nick/notificacoes") },
                 )
             }
             composable(Tab.Profile.route) {
@@ -245,17 +236,10 @@ fun MainShell(
                     vm = vm,
                     onOpenPermissions = { nav.navigate("permissions") },
                     onOpenAccounts = { nav.navigate("accounts") },
-                    onOpenPrivacy = { nav.navigate("privacy") },
+                    onOpenPrivacy = {
+                        com.notifyshare.ui.common.openUrl(context, com.notifyshare.ui.common.PRIVACY_POLICY_URL)
+                    },
                     onOpenDangerZone = { nav.navigate("danger-zone") },
-                )
-            }
-
-            composable("privacy") {
-                val ctx = LocalContext.current
-                com.notifyshare.ui.settings.PrivacyScreen(
-                    onBack = { nav.popBackStack() },
-                    onExport = { container.authRepository.exportData() },
-                    onSaveExport = { text -> shareExport(ctx, text) },
                 )
             }
 
@@ -296,7 +280,7 @@ fun MainShell(
                 IncomingRequestsScreen(
                     vm = shareVm,
                     onBack = { nav.popBackStack() },
-                    onOpenNotifications = { nick -> nav.navigate("person/$nick?from=requests") },
+                    onOpenNotifications = { nick -> nav.navigate("hub/$nick/notificacoes") },
                 )
             }
             composable("requests-outgoing") {
@@ -332,36 +316,14 @@ fun MainShell(
                 )
             }
             composable(
-                "person/{nickname}?highlight={highlight}&from={from}",
-                arguments = listOf(
-                    androidx.navigation.navArgument("highlight") {
-                        type = androidx.navigation.NavType.StringType
-                        nullable = true
-                        defaultValue = null
-                    },
-                    androidx.navigation.navArgument("from") {
-                        type = androidx.navigation.NavType.StringType
-                        nullable = true
-                        defaultValue = null
-                    },
-                ),
-            ) { entry ->
-                val nick = entry.arguments?.getString("nickname").orEmpty()
-                val highlight = entry.arguments?.getString("highlight")
-                val vm: PersonNotificationsViewModel =
-                    viewModel(factory = PersonNotificationsViewModelFactory(container, nick))
-                PersonNotificationsScreen(
-                    vm = vm, nickname = nick, onBack = { nav.popBackStack() },
-                    highlightEventId = highlight,
-                    onReplyToNotification = { eventId ->
-                        nav.navigate("hub/$nick/conversa?linkedEvent=$eventId")
-                    },
-                )
-            }
-            composable(
-                "hub/{nickname}/{tab}?linkedEvent={linkedEvent}",
+                "hub/{nickname}/{tab}?linkedEvent={linkedEvent}&highlightEvent={highlightEvent}",
                 arguments = listOf(
                     androidx.navigation.navArgument("linkedEvent") {
+                        type = androidx.navigation.NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                    androidx.navigation.navArgument("highlightEvent") {
                         type = androidx.navigation.NavType.StringType
                         nullable = true
                         defaultValue = null
@@ -371,16 +333,17 @@ fun MainShell(
                 val nick = entry.arguments?.getString("nickname").orEmpty()
                 val hubTab = entry.arguments?.getString("tab")
                 val linkedEvent = entry.arguments?.getString("linkedEvent")
+                val highlightEvent = entry.arguments?.getString("highlightEvent")
                 com.notifyshare.ui.hub.PersonHubScreen(
                     container = container,
                     hubEntry = entry,
                     nickname = nick,
                     initialTab = hubTab,
                     initialLinkedEvent = linkedEvent,
+                    initialHighlightEvent = highlightEvent,
                     onBack = { nav.popBackStack() },
                     onOpenProfile = { nav.navigate("user/$nick?from=hub") },
                     onOpenAppPicker = { grantId -> nav.navigate("hub-apps/$grantId/$nick") },
-                    onOpenSystemAlerts = { nav.navigate("system-alerts") },
                 )
             }
             composable("hub-apps/{grantId}/{nickname}") { entry ->
@@ -410,7 +373,6 @@ fun MainShell(
                         nav.popBackStack()
                     },
                     onPickApps = { nav.navigate("apps/$grantId/$nick") },
-                    onOpenSystemAlerts = { nav.navigate("system-alerts") },
                 )
             }
             composable("apps/{grantId}/{nickname}") { entry ->
@@ -441,12 +403,6 @@ fun MainShell(
                         // Volta para a tela anterior
                         nav.popBackStack()
                     },
-                )
-            }
-            composable("system-alerts") {
-                com.notifyshare.ui.settings.SystemAlertsScreen(
-                    container = container,
-                    onBack = { nav.popBackStack() },
                 )
             }
             composable("permissions") {

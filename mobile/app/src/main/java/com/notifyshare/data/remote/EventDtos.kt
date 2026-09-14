@@ -37,6 +37,11 @@ data class FeedItemDto(
     val notify: Boolean = true,
 )
 
+/** Uma página do feed, com o total de itens que batem com o filtro (sem paginar) —
+ *  usado para montar "Página X de Y". */
+@Serializable
+data class FeedPageDto(val items: List<FeedItemDto>, val total: Long)
+
 @Serializable
 data class CountDto(val count: Long)
 

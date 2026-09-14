@@ -55,7 +55,6 @@ private fun JsonObject.str(key: String): String? =
     runCatching { this[key]?.jsonPrimitive?.content }.getOrNull()?.takeIf { it.isNotBlank() }
 
 fun friendlyPackage(pkg: String): String = when {
-    pkg == "system:phone" -> "Meu celular"
     pkg.startsWith("system:") -> pkg.removePrefix("system:").replaceFirstChar(Char::uppercase)
     pkg.contains('.') -> pkg.substringAfterLast('.').replaceFirstChar(Char::uppercase)
     else -> pkg
@@ -66,7 +65,6 @@ fun eventTitle(row: FeedItemDto): String {
     val app = obj?.str("appLabel") ?: obj?.str("title") ?: friendlyPackage(row.packageName)
     val sender = obj?.str("sender")
     return when {
-        row.packageName == "system:phone" -> "Meu celular"
         row.eventType == "battery" -> "Bateria"
         row.eventType == "network" -> "Wi-Fi"
         sender != null -> "$app · $sender"
@@ -75,8 +73,8 @@ fun eventTitle(row: FeedItemDto): String {
 }
 
 fun eventBody(row: FeedItemDto): String = when (row.mode) {
-    "sender_only" -> "Conteudo oculto — so o remetente"
-    else -> row.contentObject()?.str("body") ?: "Nova notificacao"
+    "sender_only" -> "Conteúdo oculto — só o remetente"
+    else -> row.contentObject()?.str("body") ?: "Nova notificação"
 }
 
 /** Nome do grupo, quando a notificacao veio de uma conversa em grupo. */

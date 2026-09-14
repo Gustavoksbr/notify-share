@@ -1,5 +1,7 @@
 package com.notifyshare.ui.auth
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -138,21 +141,48 @@ fun PrimaryButton(
     }
 }
 
-/** Botao "Continuar com Google": abre o seletor de contas e entrega o token ao ViewModel. */
+/**
+ * Botao "Continuar com Google": abre o seletor de contas e entrega o token ao
+ * ViewModel. Se o Credential Manager nao achar nenhuma conta no aparelho, cai
+ * sozinho no login pelo navegador ([com.notifyshare.auth.GoogleWebAuth]) —
+ * sem mostrar erro, sem exigir um segundo toque.
+ */
 @Composable
 fun GoogleSignInButton(viewModel: AuthViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val signIn = remember { com.notifyshare.auth.GoogleSignIn(context) }
+    val webAuth = remember { com.notifyshare.auth.GoogleWebAuth(context) }
+    DisposableEffect(webAuth) { onDispose { webAuth.dispose() } }
     if (!signIn.available) return
 
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    val webAuthLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val data = result.data ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            when (val r = webAuth.handleResult(data)) {
+                is GoogleSignInResult.Token -> viewModel.onGoogleToken(r.idToken)
+                is GoogleSignInResult.Error -> viewModel.showError(r.message)
+                else -> Unit
+            }
+        }
+    }
 
     OutlinedButton(
         onClick = {
             scope.launch {
                 when (val r = signIn.requestIdToken()) {
                     is GoogleSignInResult.Token -> viewModel.onGoogleToken(r.idToken)
+                    GoogleSignInResult.NoAccountOnDevice -> {
+                        if (webAuth.available) {
+                            webAuthLauncher.launch(webAuth.buildAuthIntent())
+                        } else {
+                            viewModel.showError("Nenhuma conta Google no aparelho. Adicione uma nas Configurações.")
+                        }
+                    }
                     is GoogleSignInResult.Error -> viewModel.showError(r.message)
                     GoogleSignInResult.Cancelled -> Unit
                 }

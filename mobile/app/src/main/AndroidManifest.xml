@@ -7,8 +7,8 @@
     <!-- Android 13+: sem isto o app nao consegue postar notificacao nenhuma. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Servico em primeiro plano: a notificacao fixa de "servico ativo" e o
-         monitor de bateria/Wi-Fi. specialUse porque ele precisa rodar enquanto
-         houver compartilhamento, sem o teto de tempo do dataSync. -->
+         WebSocket enquanto ha compartilhamento. specialUse porque ele precisa
+         rodar enquanto houver compartilhamento, sem o teto de tempo do dataSync. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Religar o servico depois de reiniciar o aparelho. -->
@@ -100,6 +100,18 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="events" />
+
+        <!-- Compartilha arquivos exportados (.json) com outros apps via URI de
+             conteudo, sem expor caminhos de arquivo reais. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 

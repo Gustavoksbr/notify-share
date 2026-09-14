@@ -14,20 +14,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notifyshare.AppContainer
-import com.notifyshare.NotifyShareApp
 import com.notifyshare.data.local.AppMode
-import com.notifyshare.ui.onboarding.PermissionsScreen
+import com.notifyshare.ui.common.tr
+import com.notifyshare.ui.settings.ConfiguracoesNav
 import com.notifyshare.ui.theme.NotifyIcons
 import com.notifyshare.ui.vault.VaultAppsNav
 import com.notifyshare.ui.vault.VaultTimelineScreen
-import kotlinx.coroutines.launch
 
 /**
  * Modo Local: cofre ("Salvos") + Permissões do aparelho. Funciona sem conta e
@@ -37,9 +34,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun LocalShell(container: AppContainer, mode: AppMode, onModeChange: (AppMode) -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val serviceEnabled by container.serviceSwitch.enabled.collectAsStateWithLifecycle(initialValue = true)
+    // "menu" no toque normal da aba; "permissions" quando um aviso amarelo leva
+    // direto pra lá, sem passar pelo menu de Configurações.
+    var configuracoesStart by rememberSaveable { mutableStateOf("menu") }
 
     Scaffold(
         bottomBar = {
@@ -54,8 +51,8 @@ fun LocalShell(container: AppContainer, mode: AppMode, onModeChange: (AppMode) -
                 NavigationBarItem(
                     selected = tab == 0,
                     onClick = { tab = 0 },
-                    icon = { Icon(NotifyIcons.Bookmark, "Salvos") },
-                    label = { Text("Salvos") },
+                    icon = { Icon(NotifyIcons.Bookmark, tr("Salvos", "Saved")) },
+                    label = { Text(tr("Salvos", "Saved")) },
                     colors = colors,
                 )
                 NavigationBarItem(
@@ -67,32 +64,25 @@ fun LocalShell(container: AppContainer, mode: AppMode, onModeChange: (AppMode) -
                 )
                 NavigationBarItem(
                     selected = tab == 2,
-                    onClick = { tab = 2 },
-                    icon = { Icon(NotifyIcons.Check, "Permissões") },
-                    label = { Text("Permissões") },
+                    onClick = { tab = 2; configuracoesStart = "menu" },
+                    icon = { Icon(NotifyIcons.Wrench, tr("Configurações", "Settings")) },
+                    label = { Text(tr("Configurações", "Settings")) },
                     colors = colors,
                 )
             }
         },
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
+            com.notifyshare.ui.common.AppWarningBanners(
+                container,
+                onOpenPermissions = { configuracoesStart = "permissions"; tab = 2 },
+            )
             AppModeSwitcher(mode, onModeChange)
-            com.notifyshare.ui.common.AppWarningBanners(container)
             Box(Modifier.weight(1f)) {
                 when (tab) {
                     0 -> VaultTimelineScreen(container)
                     1 -> VaultAppsNav(container)
-                    else -> PermissionsScreen(
-                        fcmStatus = null,
-                        onBack = null,
-                        serviceEnabled = serviceEnabled,
-                        onSetService = { on ->
-                            scope.launch {
-                                container.serviceSwitch.set(on)
-                                (context.applicationContext as? NotifyShareApp)?.refreshSharing()
-                            }
-                        },
-                    )
+                    else -> ConfiguracoesNav(container, startDestination = configuracoesStart)
                 }
             }
         }

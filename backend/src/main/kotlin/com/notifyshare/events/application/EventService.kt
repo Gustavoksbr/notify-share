@@ -53,6 +53,10 @@ data class FeedItemView(
     val notify: Boolean,
 )
 
+/** Uma pagina do feed, com o total de itens que batem com o filtro (sem paginar) —
+ *  o app monta "Pagina X de Y" a partir disso. */
+data class FeedPage(val items: List<FeedItemView>, val total: Long)
+
 /** Informacao sobre a posicao de um evento especifico no feed. */
 data class EventLocation(
     val eventId: UUID,
@@ -124,7 +128,7 @@ class EventService(
     // --- feed do destinatario ---------------------------------------------
 
     @Transactional(readOnly = true)
-    fun feed(recipientId: UUID, filter: FeedFilter, page: Int, size: Int): List<FeedItemView> {
+    fun feed(recipientId: UUID, filter: FeedFilter, page: Int, size: Int): FeedPage {
         val originId = filter.fromNickname?.let { resolve(it).id }
         val rows = deliveries.feed(
             recipientId = recipientId,
@@ -135,7 +139,15 @@ class EventService(
             since = since(filter.period),
             pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 100)),
         )
-        return toViews(rows)
+        val total = deliveries.countFeed(
+            recipientId = recipientId,
+            originUserId = originId,
+            packageName = filter.packageName,
+            eventType = filter.eventType,
+            senderHash = filter.senderHash,
+            since = since(filter.period),
+        )
+        return FeedPage(toViews(rows), total)
     }
 
     /** NotificacoesPessoa: "ele envia" (received) x "eu envio" (sent). */
@@ -147,7 +159,7 @@ class EventService(
         filter: FeedFilter,
         page: Int,
         size: Int,
-    ): List<FeedItemView> {
+    ): FeedPage {
         val other = resolve(otherNickname)
         val (recipientId, originId) = when (direction) {
             "sent" -> other.id to meId
@@ -163,7 +175,15 @@ class EventService(
             since = since(filter.period),
             pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 100)),
         )
-        return toViews(rows)
+        val total = deliveries.countFeed(
+            recipientId = recipientId,
+            originUserId = originId,
+            packageName = filter.packageName,
+            eventType = filter.eventType,
+            senderHash = filter.senderHash,
+            since = since(filter.period),
+        )
+        return FeedPage(toViews(rows), total)
     }
 
     @Transactional

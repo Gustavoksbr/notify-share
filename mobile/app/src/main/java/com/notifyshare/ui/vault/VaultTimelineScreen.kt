@@ -3,7 +3,9 @@ package com.notifyshare.ui.vault
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,13 +38,18 @@ import com.notifyshare.data.local.VaultItem
 import com.notifyshare.ui.common.AppIcon
 import com.notifyshare.ui.common.EmptyState
 import com.notifyshare.ui.common.ScreenTitle
+import com.notifyshare.ui.common.SectionLabel
 import com.notifyshare.ui.common.shareTextExport
+import com.notifyshare.ui.format.dayBucket
 import com.notifyshare.ui.format.friendlyPackage
 import com.notifyshare.ui.format.fullDateTime
 import com.notifyshare.ui.format.shortTime
 import com.notifyshare.ui.theme.NotifyIcons
 import com.notifyshare.ui.theme.NotifyShareColors
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * O "cofre": tudo que as regras locais capturaram, mais novo no topo. Vive só
@@ -64,8 +73,25 @@ fun VaultTimelineScreen(container: AppContainer) {
     val senders = remember(items) { items.mapNotNull { it.sender }.distinct().sorted() }
     val filtered = remember(items, viewFilter) { items.filter { it.matches(viewFilter) } }
 
+    // Quanto mais filtrado, menor a página: um filtro bem específico já devolve
+    // poucos resultados, não faz sentido continuar paginando do tamanho cheio.
+    // O tamanho-base vem de VAULT_PAGE_SIZE no .env (mobile/.env) — vazio = 100.
+    val basePageSize = com.notifyshare.BuildConfig.VAULT_PAGE_SIZE.toIntOrNull()?.takeIf { it > 0 } ?: 100
+    val pageSize = when (viewFilter.activeCount) {
+        0 -> basePageSize
+        1 -> (basePageSize / 2).coerceAtLeast(1)
+        2 -> (basePageSize / 4).coerceAtLeast(1)
+        else -> (basePageSize / 10).coerceAtLeast(1)
+    }
+    var page by remember(viewFilter) { mutableStateOf(1) }
+    val totalPages = ((filtered.size + pageSize - 1) / pageSize).coerceAtLeast(1)
+    LaunchedEffect(totalPages) { if (page > totalPages) page = totalPages }
+    val pageItems = remember(filtered, page, pageSize) {
+        filtered.drop((page - 1) * pageSize).take(pageSize)
+    }
+
     fun export(toExport: List<VaultItem>) {
-        shareTextExport(context, "notify-share-cofre.txt", buildVaultExport(toExport))
+        shareTextExport(context, "notify-share-cofre.json", buildVaultExportJson(toExport), mime = "application/json")
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -100,31 +126,34 @@ fun VaultTimelineScreen(container: AppContainer) {
             return
         }
 
-        if (filtered.isEmpty()) {
-            EmptyState("Nada bate com esses filtros.")
-        } else {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(filtered, key = { it.id }) { item ->
-                    VaultRow(item, onDelete = { confirmDelete = item }, onOpenDetail = { detailOf = item })
-                }
-                item {
-                    Text(
-                        "Limpar tudo",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { confirmClear = true }
-                            .padding(20.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
+        Box(Modifier.weight(1f)) {
+            if (filtered.isEmpty()) {
+                EmptyState("Nada bate com esses filtros.")
+            } else {
+                val grouped = pageItems.groupBy { dayBucket(it.occurredAt) }
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    grouped.forEach { (bucket, rows) ->
+                        item(key = "h_$bucket") { SectionLabel(bucket) }
+                        items(rows, key = { it.id }) { item ->
+                            VaultRow(item, onDelete = { confirmDelete = item }, onOpenDetail = { detailOf = item })
+                        }
+                    }
                 }
             }
         }
+
+        VaultBottomBar(
+            page = page,
+            totalPages = totalPages,
+            totalCount = filtered.size,
+            showPagination = filtered.isNotEmpty(),
+            onPage = { page = it },
+            onClearAll = { confirmClear = true },
+        )
     }
 
     if (showFilters) {
@@ -189,7 +218,7 @@ fun VaultTimelineScreen(container: AppContainer) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Limpar o cofre?") },
-            text = { Text("Apaga tudo que está guardado neste aparelho. Não dá para desfazer.") },
+            text = { Text("Apaga tudo do cofre. Não dá para desfazer.") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch { container.vault.clearItems() }
@@ -201,26 +230,52 @@ fun VaultTimelineScreen(container: AppContainer) {
     }
 }
 
-private fun buildVaultExport(items: List<VaultItem>): String = buildString {
-    appendLine("Cofre — Notify Share")
-    appendLine("Exportado em ${fullDateTime(java.time.Instant.now().toString())}")
-    appendLine("${items.size} itens")
-    appendLine()
-    items.sortedBy { it.occurredAt }.forEach { i ->
-        val head = buildString {
-            append(i.group ?: friendlyPackage(i.packageName))
-            i.sender?.takeIf { it.isNotBlank() && it != i.group }?.let { append(" · "); append(it) }
-        }
-        appendLine("[${fullDateTime(i.occurredAt)}] $head")
-        val line = when {
-            i.mode == "sender_only" -> "(conteúdo oculto — só o remetente)"
-            !i.body.isNullOrBlank() -> i.body
-            !i.title.isNullOrBlank() -> i.title
-            else -> "—"
-        }
-        appendLine("  $line")
-        appendLine()
-    }
+@Serializable
+private data class VaultExport(
+    val exportedAt: String,
+    val count: Int,
+    val items: List<VaultItem>,
+)
+
+private val exportJson = Json { prettyPrint = true }
+
+private fun buildVaultExportJson(items: List<VaultItem>): String {
+    val payload = VaultExport(
+        exportedAt = java.time.Instant.now().toString(),
+        count = items.size,
+        items = items.sortedByDescending { it.occurredAt },
+    )
+    return exportJson.encodeToString(payload)
+}
+
+@Composable
+private fun VaultBottomBar(
+    page: Int,
+    totalPages: Int,
+    totalCount: Int,
+    showPagination: Boolean,
+    onPage: (Int) -> Unit,
+    onClearAll: () -> Unit,
+) {
+    com.notifyshare.ui.common.PageBar(
+        page = page,
+        totalPages = totalPages,
+        totalCount = totalCount,
+        show = showPagination,
+        onPage = onPage,
+        footer = {
+            Text(
+                "Limpar tudo",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClearAll)
+                    .padding(vertical = 14.dp),
+            )
+        },
+    )
 }
 
 @Composable
@@ -323,7 +378,12 @@ private fun VaultDetailSheet(item: VaultItem, onDismiss: () -> Unit) {
             DetailLine("Guardado em", fullDateTime(item.savedAt))
             DetailLine(
                 "Conteúdo guardado",
-                if (item.mode == "sender_only") "Só o remetente (sem texto)" else "Texto completo",
+                when {
+                    item.mode == "sender_only" -> "Só o remetente (sem texto)"
+                    !item.body.isNullOrBlank() -> item.body
+                    !item.title.isNullOrBlank() -> item.title
+                    else -> "—"
+                },
             )
             if (!item.title.isNullOrBlank() && item.title != item.body) {
                 DetailLine("Título original", item.title)

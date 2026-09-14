@@ -1,5 +1,7 @@
 package com.notifyshare.ui.common
 
+import android.content.Context
+import android.os.PowerManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -11,7 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -21,20 +22,28 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notifyshare.AppContainer
-import com.notifyshare.NotifyShareApp
 import com.notifyshare.core.Connectivity
 import com.notifyshare.core.NetState
 import com.notifyshare.core.NotificationAccess
 import com.notifyshare.ui.theme.NotifyShareColors
-import kotlinx.coroutines.launch
 
 /**
  * Faixa de avisos no topo — a mesma em toda a app (logado e deslogado). Ficam
  * empilhados num Column, um em cima do outro, nunca sobrepostos.
  *
+ * Só avisos de permissões "para enviar" (capturar/compartilhar) moram aqui —
+ * valem pros dois modos (Social e Local), por isso ficam ACIMA do
+ * [com.notifyshare.ui.shell.AppModeSwitcher] nas telas que o chamam. O aviso
+ * de "para receber" (mostrar notificações) é só do Social — ver
+ * [ReceiveWarningBanner], chamado embaixo do switch.
+ *
  * `onOpenPermissions` = null em quem não tem essa rota (shell deslogado): aí o
- * aviso de acesso às notificações não aparece (não há compartilhamento ativo
- * sem login de qualquer forma).
+ * aviso de acesso às notificações não aparece.
+ *
+ * Nenhum desses avisos depende de ter compartilhamento ativo nem do modo:
+ * sem segundo plano, acesso às notificações ou isenção de bateria, nada é
+ * capturado direito — nem para o Social nem para o cofre local. Por isso um
+ * card só (aqui), reaproveitado nos dois, em vez de cada tela ter o seu.
  */
 @Composable
 fun AppWarningBanners(
@@ -42,14 +51,15 @@ fun AppWarningBanners(
     onOpenPermissions: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val serviceEnabled by container.serviceSwitch.enabled.collectAsStateWithLifecycle(initialValue = true)
     val netState by Connectivity.state.collectAsStateWithLifecycle()
-    val hasActiveShare by container.shareState.hasActiveShare.collectAsStateWithLifecycle(initialValue = false)
 
     var nlsGranted by remember { mutableStateOf(true) }
+    var batteryExempt by remember { mutableStateOf(true) }
     LifecycleResumeEffect(Unit) {
         nlsGranted = NotificationAccess.isGranted(context)
+        batteryExempt = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
+            ?.isIgnoringBatteryOptimizations(context.packageName) ?: true
         onPauseOrDispose { }
     }
 
@@ -67,30 +77,57 @@ fun AppWarningBanners(
             )
         }
 
-        if (!serviceEnabled) {
+        if (!serviceEnabled && onOpenPermissions != null) {
             Banner(
-                "⚠️ O segundo plano está desativado — o compartilhamento em tempo real e os " +
-                    "alertas de \"Meu celular\" estão parados. Toque para religar.",
+                "⚠️ Segundo plano desativado — toque para religar.",
                 bg = NotifyShareColors.warning,
                 fg = Color(0xFF452B00),
-                onClick = {
-                    scope.launch {
-                        container.serviceSwitch.set(true)
-                        (context.applicationContext as? NotifyShareApp)?.refreshSharing()
-                    }
-                },
-            )
-        }
-
-        if (!nlsGranted && hasActiveShare && onOpenPermissions != null) {
-            Banner(
-                "⚠️ O compartilhamento de apps não está funcionando: falta o acesso às " +
-                    "notificações. Toque para ativar.",
-                bg = MaterialTheme.colorScheme.errorContainer,
-                fg = MaterialTheme.colorScheme.onErrorContainer,
                 onClick = onOpenPermissions,
             )
         }
+
+        if (!nlsGranted && onOpenPermissions != null) {
+            Banner(
+                "⚠️ Acesso às notificações desativado — toque para religar.",
+                bg = NotifyShareColors.warning,
+                fg = Color(0xFF452B00),
+                onClick = onOpenPermissions,
+            )
+        }
+
+        if (!batteryExempt && onOpenPermissions != null) {
+            Banner(
+                "⚠️ Ignorar economia de bateria desativado — toque para religar.",
+                bg = NotifyShareColors.warning,
+                fg = Color(0xFF452B00),
+                onClick = onOpenPermissions,
+            )
+        }
+    }
+}
+
+/**
+ * Aviso de "mostrar notificações" (POST_NOTIFICATIONS) — só faz sentido no
+ * Social: é o que deixa o app te avisar quando alguém compartilha algo com
+ * você. Fica embaixo do [com.notifyshare.ui.shell.AppModeSwitcher] (ver
+ * [AppWarningBanners] para os avisos de "enviar", que ficam em cima).
+ */
+@Composable
+fun ReceiveWarningBanner(onOpenPermissions: (() -> Unit)? = null) {
+    if (android.os.Build.VERSION.SDK_INT < 33 || onOpenPermissions == null) return
+    val context = LocalContext.current
+    var canPost by remember { mutableStateOf(true) }
+    LifecycleResumeEffect(Unit) {
+        canPost = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+        onPauseOrDispose { }
+    }
+    if (!canPost) {
+        Banner(
+            "⚠️ Mostrar notificações desativado — toque para religar.",
+            bg = NotifyShareColors.warning,
+            fg = Color(0xFF452B00),
+            onClick = onOpenPermissions,
+        )
     }
 }
 

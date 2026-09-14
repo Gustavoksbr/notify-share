@@ -74,6 +74,9 @@ data class ChatUiState(
     /** Notificacao a vincular na proxima mensagem (veio de "Responder" no feed). */
     val linkedEventId: String? = null,
     val linkedEventLabel: String? = null,
+    /** Texto da notificação vinculada — direto de quem chamou linkEvent (sem
+     *  round-trip pro servidor), pra já aparecer enquanto o usuário digita. */
+    val linkedEventPreview: String? = null,
     /** Ids de mensagens sendo apagadas agora. */
     val deleting: Set<String> = emptySet(),
 )
@@ -110,12 +113,6 @@ class ChatViewModel(
         load(silent = true)
     }
 
-    /** Monta a transcrição completa da conversa (todas as páginas) como texto. */
-    fun exportTranscript(onReady: (String?) -> Unit) = viewModelScope.launch {
-        val items = repo.fullHistory(nickname)
-        onReady(items?.let { com.notifyshare.ui.chat.buildTranscript(nickname, it) })
-    }
-
     fun load(silent: Boolean = false) {
         if (!silent) _state.value = _state.value.copy(loading = true)
         viewModelScope.launch {
@@ -138,10 +135,13 @@ class ChatViewModel(
 
     private fun resolveLinkedLabel(items: List<TimelineItemDto>) {
         val id = _state.value.linkedEventId ?: return
+        // Já tem label local (veio de linkEvent com preview) — não sobrescreve.
+        if (_state.value.linkedEventLabel != null) return
         val found = items.firstNotNullOfOrNull { it.linkedEvent?.takeIf { e -> e.eventId == id } }
         if (found != null) {
             _state.value = _state.value.copy(
                 linkedEventLabel = "${prettyPackage(found.packageName)} · ${shortTime(found.occurredAt)}",
+                linkedEventPreview = found.preview,
             )
         }
     }
@@ -171,13 +171,24 @@ class ChatViewModel(
     }
 
     fun clearLinkedEvent() {
-        _state.value = _state.value.copy(linkedEventId = null, linkedEventLabel = null)
+        _state.value = _state.value.copy(
+            linkedEventId = null, linkedEventLabel = null, linkedEventPreview = null,
+        )
     }
 
-    /** Vincula uma notificacao a proxima mensagem (veio da aba Notificacoes do hub). */
-    fun linkEvent(eventId: String) {
-        _state.value = _state.value.copy(linkedEventId = eventId.takeIf { it.isNotBlank() })
-        resolveLinkedLabel(_state.value.items)
+    /**
+     * Vincula uma notificacao a proxima mensagem (veio da aba Notificacoes do
+     * hub). `label`/`preview` vem de quem chama, quando já tem o dado em mãos
+     * (ex.: a linha da notificação já carregada) — assim o compositor mostra
+     * o conteúdo na hora, sem esperar o envio ida-e-volta pro servidor.
+     */
+    fun linkEvent(eventId: String, label: String? = null, preview: String? = null) {
+        _state.value = _state.value.copy(
+            linkedEventId = eventId.takeIf { it.isNotBlank() },
+            linkedEventLabel = label,
+            linkedEventPreview = preview,
+        )
+        if (label == null) resolveLinkedLabel(_state.value.items)
     }
 
     /** Some da conversa na hora; se o servidor recusar, a mensagem volta. */
@@ -461,8 +472,8 @@ private fun ComposeContext(
             onCancel,
         )
         state.linkedEventId != null -> ContextBar(
-            "Mencionando notificação",
-            state.linkedEventLabel ?: "notificação selecionada",
+            "Mencionando notificação" + (state.linkedEventLabel?.let { " · $it" } ?: ""),
+            state.linkedEventPreview ?: "notificação selecionada",
             onClearLinked,
         )
     }

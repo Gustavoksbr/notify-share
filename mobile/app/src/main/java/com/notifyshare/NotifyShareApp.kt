@@ -54,16 +54,12 @@ class AppContainer(context: Context) {
     val session = SessionState()
     val shareState = ShareState(context.applicationContext)
     val serviceSwitch = com.notifyshare.data.local.ServiceSwitch(context.applicationContext)
-    val systemAlerts = com.notifyshare.data.local.SystemAlertsConfig(context.applicationContext)
     /** Social × Local — device-wide, independente de login/conta. */
     val appMode = com.notifyshare.data.local.AppModeStore(context.applicationContext)
+    /** Idioma da interface — device-wide, independente de login/conta. */
+    val language = com.notifyshare.data.local.LanguageStore(context.applicationContext)
     /** Cofre local — só neste aparelho, funciona deslogado. */
     val vault = com.notifyshare.data.local.VaultStore(context.applicationContext)
-
-    /** O cofre quer eventos do "Meu celular"? Então o serviço precisa rodar mesmo
-     *  sem compartilhamento ativo. Leitura síncrona do snapshot em memória. */
-    fun vaultWantsSystemNow(): Boolean =
-        vault.rulesSnapshot().any { it.packageName == com.notifyshare.data.local.PKG_SYSTEM_PHONE && it.enabled }
     val cache = JsonCache(context.applicationContext) { tokenStore.activeId() }
     val recentApps = com.notifyshare.data.local.RecentAppsStore(context.applicationContext)
 
@@ -143,11 +139,6 @@ class NotifyShareApp : Application() {
                 healthCheck = { container.authRepository.ping() },
             ),
         )
-        // Regras do cofre mudaram (inclusive na carga inicial): re-decide se o
-        // servico precisa rodar por causa dos eventos de "Meu celular".
-        container.appScope.launch {
-            container.vault.rules.collect { refreshSharing() }
-        }
     }
 
     /**
@@ -203,22 +194,12 @@ class NotifyShareApp : Application() {
                 return@launch
             }
             val grants = container.socialRepository.grants("sharer")
-            val activeOrNull = (grants as? ApiResult.Ok)?.value?.count { it.isActive }
-            if (activeOrNull == null) {
-                // Falha ao buscar grants (rede, ou deslogado): nao mexe no servico
-                // por um blip, mas se o cofre quer eventos do sistema, garante ligado.
-                if (container.vaultWantsSystemNow()) {
-                    runCatching { ShareForegroundService.start(this@NotifyShareApp) }
-                }
-                return@launch
-            }
-            val active = activeOrNull
+            val active = (grants as? ApiResult.Ok)?.value?.count { it.isActive } ?: return@launch
             container.shareState.update(active > 0, active)
-            val shouldRun = active > 0 || container.vaultWantsSystemNow()
             // start() pode ser bloqueado se o app estiver em segundo plano; nesse
             // caso o proximo retorno ao primeiro plano tenta de novo.
             runCatching {
-                if (shouldRun) ShareForegroundService.start(this@NotifyShareApp, active)
+                if (active > 0) ShareForegroundService.start(this@NotifyShareApp, active)
                 else ShareForegroundService.stop(this@NotifyShareApp)
             }
         }

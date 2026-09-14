@@ -7,52 +7,40 @@ https://github.com/Gustavoksbr/notify-share
 Compartilhe as notificações do seu Android com pessoas que você escolher — e só
 o que você escolher.
 
-O celular avisa você de várias coisas: uma mensagem do José no WhatsApp, a
-bateria em 20%, o Wi-Fi que caiu. O Notify Share deixa você repassar esses
-avisos para alguém específico, com regras finas sobre **o quê**, **de quem** e
-**para quem**.
-
-Android apenas
 
 ---
 
-## Casos de uso
+## Descrição
 
-**Filho acompanhando pai ou mãe idosos.**
-A mãe compartilha as notificações do WhatsApp e os alertas de bateria. O filho
-percebe quando ela não responde há horas, ou quando o celular dela está prestes
-a desligar. Ela vê exatamente o que está compartilhando e desliga quando quiser.
+Notify Share é um app Android (com backend próprio) para compartilhar
+notificações do seu celular com pessoas específicas, escolhendo exatamente o
+quê: app por app, remetente por remetente, conteúdo completo ou só o aviso de
+"chegou algo".
 
-**Delegação de atendimento.**
-O dono de um negócio compartilha só o WhatsApp Business com a assistente, e só
-as mensagens de clientes — nada do WhatsApp pessoal, que continua invisível.
-
-**Casal dividindo a logística.**
-Notificações de entrega, banco e portaria vão para os dois, sem ninguém
-precisar tirar print e reenviar.
-
-**Plantão e on-call.**
-Quem está de sobreaviso compartilha os alertas do sistema de monitoramento com
-quem vai render o turno, sem dar acesso à ferramenta inteira.
-
-**Dois aparelhos, uma pessoa.**
-O celular de trabalho repassa para o pessoal. Aqui as duas pontas são suas —
-esse é o caso device-to-device, e ele é cidadão de primeira classe no produto.
-
-**Acessibilidade.**
-Alguém com deficiência visual pode ter um cuidador recebendo os avisos
-importantes em paralelo.
+- **Social** — você adiciona amigos e libera um "grant" de compartilhamento
+  para cada um, com regras independentes por pessoa. Quem recebe vê as
+  notificações num feed e pode conversar com quem compartilhou, numa aba de
+  chat própria.
+- **Cofre local** — um modo "Local", desligado de conta/login, que guarda
+  notificações escolhidas só neste aparelho, sem passar pelo servidor. Tem
+  filtros (inclusive por período exato, com calendário) e exportação.
+- **Regras finas** — por app dá para escolher entre mandar o conteúdo ou só
+  avisar que chegou algo, e (em apps que suportam, como WhatsApp/Telegram)
+  filtrar por remetente. Códigos de verificação (OTP) são bloqueados por
+  padrão.
+- **Entrega em tempo real** — a captura roda local via
+  `NotificationListenerService`; a entrega ao destinatário vai por FCM (push)
+  com um WebSocket como atalho enquanto o app está aberto.
 
 ---
 
 ## Como funciona
 
 ```
-   APARELHO DE ORIGEM                SERVIDOR              APARELHO DE DESTINO
+   APARELHO DE ORIGEM                    SERVIDOR             APARELHO DE DESTINO
 
-  NotificationListener  ─┐
-  Bateria / Wi-Fi / etc ─┼─► Event ─► Regras ─► HTTPS ─► roteia ─► FCM ─► notificação local
-  (EventSource)         ─┘           (local)              + histórico
+  NotificationListener ─► Regras (local) ─► HTTPS ─► roteia ─► FCM ─► notificação local
+                       └─► Cofre local (offline, sem servidor)          + histórico
 ```
 
 Três decisões moldam tudo:
@@ -70,26 +58,6 @@ mensagem.
 **O FCM é o transporte oficial.** WebSocket não sobrevive ao Doze — o sistema
 suspende a rede do processo quando a tela apaga. O WebSocket existe só como
 atalho enquanto o app está em primeiro plano; toda entrega passa pelo FCM.
-
----
-
-## Estado atual
-
-| Etapa | O quê | Status |
-|-------|-------|--------|
-| 1 | Backend: cadastro, login, JWT com refresh rotacionado | **funcionando** |
-| 2 | Backend: amigos, busca por nickname, grants, regras, aparelhos, porta FCM | **funcionando** (fumaça) |
-| 2b | Backend: eventos (ingestão, roteamento, feed, filtros, retenção) | **funcionando** (fumaça) |
-| 2c | Backend: WebSocket, mensagens + auditoria, presença | **funcionando** (fumaça) |
-| 3 | Mobile: Compose, tema, login, armazenamento de token | **funcionando** |
-| 4 | Mobile: FCM, captura via NotificationListener, regras, telas | **compila, falta testar no aparelho** |
-| 5 | Sobrevivência em segundo plano (foreground service, watchdog, heartbeat) | **compila, falta testar no aparelho** |
-
-"Fumaça" = exercitado ponta a ponta com `curl` + cliente WebSocket contra Postgres local; os testes
-Testcontainers (`*FlowTest`) rodam no terminal **TESTES** (precisam do Docker).
-
-Os mockups das telas e as decisões de arquitetura estão fora de `app/`, na raiz
-do repositório: `DECISOES.md` e `design/`.
 
 ---
 
@@ -128,10 +96,18 @@ Em produção, `JWT_SECRET` é obrigatório e precisa de pelo menos 32 bytes.
 | PUT/DELETE | `/devices` | sim | Registra/remove o token do FCM deste aparelho |
 | POST | `/devices/heartbeat` | sim | Sinal de vida (presença) |
 | GET | `/users/search?q=` | sim | Busca pessoas por nickname |
+| GET | `/users/{nickname}/profile` | sim | Perfil público de alguém (amizade, bloqueio, grants em comum) |
+| POST | `/auth/google` | não | Login/registro com token do Google (ID token) |
 | GET/POST | `/friends`, `/friends/requests` | sim | Amigos e pedidos de amizade |
+| DELETE | `/friends/{nickname}` | sim | Desfaz a amizade |
+| GET/POST | `/blocks` | sim | Lista e bloqueia usuários |
+| DELETE | `/blocks/{nickname}` | sim | Desbloqueia |
 | GET/POST | `/grants`, `/grants/pending`, `/grants/offers`, `/grants/requests` | sim | Compartilhamentos e caixa de pedidos |
 | POST/DELETE | `/grants/{id}/accept\|decline\|pause\|resume` , `DELETE /grants/{id}` | sim | Ciclo de vida do grant |
 | GET/PUT | `/grants/{id}/rules` | sim | Regras por app (só o sharer edita) |
+| GET/PUT | `/grants/{id}/notify-rules` | sim | Preferências de aviso do destinatário (só quem recebe edita) |
+| GET | `/me/export` | sim | Exporta os próprios dados (LGPD) |
+| DELETE | `/me` | sim | Apaga a própria conta |
 | POST | `/events` | sim | Ingestão de evento do aparelho de origem (idempotente por `dedupKey`) |
 | GET | `/events`, `/events/conversation` | sim | Feed do destinatário, com filtros app/tipo/remetente/período |
 | POST | `/events/deliveries/{id}/read` | sim | Marca notificação como lida |
@@ -148,18 +124,6 @@ mensagem:
 { "code": "nickname_taken", "message": "Esse nickname ja esta em uso", "field": "nickname" }
 ```
 
-### Sobre a autenticação
-
-`nickname` é o identificador público. `email` é obrigatório e único, mas privado
-e **não verificado** nesta versão — ele existe para limitar uma conta por
-endereço, não para provar que o endereço é real. Não há recuperação de senha
-ainda. O porquê disso está no ADR-001 em `DECISOES.md`.
-
-Access token dura 15 minutos. O refresh dura 30 dias, é opaco (não é JWT, para
-poder ser revogado), o servidor guarda apenas o SHA-256 dele, e cada uso emite
-um novo e invalida o anterior. Se um token já rotacionado reaparecer, é sinal de
-vazamento: toda a família de tokens daquele login é revogada de uma vez.
-
 ---
 
 ## Estrutura
@@ -168,8 +132,11 @@ vazamento: toda a família de tokens daquele login é revogada de uma vez.
 app/
 ├── backend/    Kotlin + Spring Boot 4 + Postgres + Flyway
 │   └── src/main/kotlin/com/notifyshare/
-│       ├── auth/       domain · application · adapter
+│       ├── auth/       domain · application · adapter (senha + Google)
+│       ├── account/    exportar dados / apagar conta (LGPD)
 │       ├── friends/    amizade e busca
+│       ├── blocks/     bloqueio entre usuários
+│       ├── profile/    perfil público de terceiros
 │       ├── grants/     compartilhamento, regras, auditoria
 │       ├── events/     ingestão, roteamento, feed, retenção
 │       ├── messages/   conversa (mensagens + timeline)
@@ -183,7 +150,8 @@ app/
         ├── fcm/        FirebaseMessagingService, canais, publisher
         ├── notify/     NotificationListenerService, hash do remetente, IngestWorker
         ├── service/    foreground service, watchdog, boot receiver
-        └── ui/         auth · shell · feed · friends · share · chat · profile · onboarding
+        └── ui/         auth · shell · feed · friends · share · chat · profile ·
+                        vault (cofre local) · onboarding
 ```
 
 O backend é hexagonal por pacote, organizado por feature, num módulo Gradle só.
@@ -206,6 +174,14 @@ fonte da verdade; o FCM entrega a notificação e sinaliza a tela viva
 - `backend/firebase-service-account.json` — credencial do Admin SDK (fora do git).
   Em produção, passe o JSON em `FCM_CREDENTIALS` em vez de arquivo.
 - Sem credencial ou com `FCM_ENABLED=false`, o envio de push vira no-op que loga.
+- **Login com Google e SHA-1:** o app publicado pela Play Store é re-assinado
+  pelo *Play App Signing* — o certificado final **não é** o do seu keystore de
+  release local. O SHA-1 que precisa estar cadastrado no Firebase (Configurações
+  do projeto → Suas apps → adicionar impressão digital) é o da **chave de
+  assinatura do app** (Play Console → Versões → Configuração → Integridade do
+  app → "Certificado de chave de assinatura do app"), não o do keystore usado
+  no `./gradlew bundleRelease`. Cadastre os dois SHA-1 (local + Play) para o
+  login com Google funcionar tanto instalado via `adb` quanto via Play Store.
 
 ---
 

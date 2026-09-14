@@ -85,6 +85,9 @@ fun PermissionsScreen(
         */
 
         // Interruptor mestre: liga/desliga o servico direto, nao abre config.
+        if (!serviceEnabled) {
+            InactiveHint("Compartilhamento em segundo plano")
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -238,6 +241,17 @@ private fun ScopeTag(text: String) {
     )
 }
 
+/** Aviso breve acima de uma config desativada — não repete a explicação do card. */
+@Composable
+private fun InactiveHint(title: String) {
+    Text(
+        "$title desativado — toque para religar.",
+        style = MaterialTheme.typography.labelSmall,
+        color = NotifyShareColors.warning,
+        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp),
+    )
+}
+
 @Composable
 private fun PermissionCard(
     title: String,
@@ -247,6 +261,9 @@ private fun PermissionCard(
     scope: String? = null,
     onClick: () -> Unit,
 ) {
+    if (granted == false) {
+        InactiveHint(title)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()

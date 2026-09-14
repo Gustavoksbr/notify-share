@@ -62,10 +62,9 @@ data class FeedUiState(
     /** pessoas e apps ja vistos no feed — alimentam o painel de filtros */
     val knownPeople: List<String> = emptyList(),
     val knownPackages: List<String> = emptyList(),
-    /** paginacao: 100 por pagina */
+    /** paginacao por numero de pagina, 100 por pagina (pagina atual, base 0) */
     val page: Int = 0,
-    val loadingMore: Boolean = false,
-    val endReached: Boolean = false,
+    val totalCount: Long = 0,
 ) {
     val activeFilterCount: Int
         get() = listOf(
@@ -99,53 +98,31 @@ class FeedViewModel(
         // mantem a lista atual visivel enquanto a filtrada carrega — melhor a
         // informacao anterior do que um spinner por cima do nada.
         _state.value = _state.value.copy(filter = filter, error = null)
-        load(silent = true)
+        load(silent = true, page = 0)
     }
 
     fun clearFilter() = applyFilter(com.notifyshare.data.FeedQuery())
 
-    fun load(silent: Boolean = false) {
+    /** Troca de pagina (paginacao numerada, igual a de Salvos). */
+    fun goToPage(page: Int) = load(silent = true, page = page)
+
+    fun load(silent: Boolean = false, page: Int = _state.value.page) {
         if (!silent) _state.value = _state.value.copy(loading = true, error = null)
         val current = _state.value
         viewModelScope.launch {
-            when (val r = repo.feed(current.filter, page = 0)) {
+            when (val r = repo.feed(current.filter, page = page)) {
                 is ApiResult.Ok -> _state.value = current.copy(
                     loading = false,
                     refreshing = false,
                     error = null,
-                    items = r.value,
-                    page = 0,
-                    endReached = r.value.size < repo.pageSize,
-                    loadingMore = false,
-                    knownPeople = (current.knownPeople + r.value.map { it.from }).distinct().sorted(),
-                    knownPackages = (current.knownPackages + r.value.map { it.packageName }).distinct().sorted(),
+                    items = r.value.items,
+                    page = page,
+                    totalCount = r.value.total,
+                    knownPeople = (current.knownPeople + r.value.items.map { it.from }).distinct().sorted(),
+                    knownPackages = (current.knownPackages + r.value.items.map { it.packageName }).distinct().sorted(),
                 )
                 is ApiResult.Failure -> _state.value =
                     current.copy(loading = false, refreshing = false, error = r.message)
-            }
-        }
-    }
-
-    /** Proxima pagina (scroll infinito). */
-    fun loadMore() {
-        val current = _state.value
-        if (current.loadingMore || current.endReached || current.loading) return
-        _state.value = current.copy(loadingMore = true)
-        viewModelScope.launch {
-            val next = current.page + 1
-            when (val r = repo.feed(current.filter, page = next)) {
-                is ApiResult.Ok -> {
-                    val merged = (current.items + r.value).distinctBy { it.deliveryId }
-                    _state.value = _state.value.copy(
-                        items = merged,
-                        page = next,
-                        loadingMore = false,
-                        endReached = r.value.size < repo.pageSize,
-                        knownPeople = (_state.value.knownPeople + r.value.map { it.from }).distinct().sorted(),
-                        knownPackages = (_state.value.knownPackages + r.value.map { it.packageName }).distinct().sorted(),
-                    )
-                }
-                is ApiResult.Failure -> _state.value = _state.value.copy(loadingMore = false)
             }
         }
     }
@@ -164,7 +141,11 @@ class FeedViewModel(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun FeedScreen(vm: FeedViewModel, onOpenPerson: (String) -> Unit, onReplyToNotification: ((eventId: String, from: String) -> Unit)? = null) {
+fun FeedScreen(
+    vm: FeedViewModel,
+    onOpenPerson: (nickname: String, eventId: String) -> Unit,
+    onReplyToNotification: ((eventId: String, from: String) -> Unit)? = null,
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     var showFilters by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
@@ -181,33 +162,42 @@ fun FeedScreen(vm: FeedViewModel, onOpenPerson: (String) -> Unit, onReplyToNotif
             )
         })
 
-        when {
-            state.loading -> LoadingBox()
-            state.error != null && state.items.isEmpty() -> ErrorRetry(state.error!!, vm::load)
-            else -> androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-                isRefreshing = state.refreshing,
-                onRefresh = vm::refresh,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                if (state.items.isEmpty()) {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        item {
-                            EmptyState(
-                                if (state.activeFilterCount > 0)
-                                    "Nada bate com esses filtros."
-                                else
-                                    "Nada por aqui ainda.\nQuando alguem compartilhar notificacoes com voce, elas aparecem aqui.",
-                            )
+        Box(Modifier.weight(1f)) {
+            when {
+                state.loading -> LoadingBox()
+                state.error != null && state.items.isEmpty() -> ErrorRetry(state.error!!, vm::load)
+                else -> androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                    isRefreshing = state.refreshing,
+                    onRefresh = vm::refresh,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    if (state.items.isEmpty()) {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            item {
+                                EmptyState(
+                                    if (state.activeFilterCount > 0)
+                                        "Nada bate com esses filtros."
+                                    else
+                                        "Nada por aqui ainda.\nQuando alguém compartilhar notificações com você, elas aparecem aqui.",
+                                )
+                            }
                         }
+                    } else {
+                        FeedList(state.items, onOpenPerson, vm::markRead, onReplyToNotification)
                     }
-                } else {
-                    FeedList(
-                        state.items, state.loadingMore, vm::loadMore,
-                        onOpenPerson, vm::markRead, onReplyToNotification,
-                    )
                 }
             }
         }
+
+        val pageSize = 100
+        val totalPages = ((state.totalCount + pageSize - 1) / pageSize).toInt().coerceAtLeast(1)
+        com.notifyshare.ui.common.PageBar(
+            page = state.page + 1,
+            totalPages = totalPages,
+            totalCount = state.totalCount.toInt(),
+            show = state.items.isNotEmpty() || state.page > 0,
+            onPage = { vm.goToPage(it - 1) },
+        )
     }
 
     if (showFilters) {
@@ -225,18 +215,12 @@ fun FeedScreen(vm: FeedViewModel, onOpenPerson: (String) -> Unit, onReplyToNotif
 @Composable
 private fun FeedList(
     items: List<FeedItemDto>,
-    loadingMore: Boolean,
-    onLoadMore: () -> Unit,
-    onOpenPerson: (String) -> Unit,
+    onOpenPerson: (nickname: String, eventId: String) -> Unit,
     onMarkRead: (String) -> Unit,
     onReplyToNotification: ((eventId: String, from: String) -> Unit)? = null,
 ) {
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    com.notifyshare.ui.common.InfiniteListHandler(listState, onLoadMore = onLoadMore)
-
     val grouped = items.groupBy { dayBucket(it.occurredAt) }
     LazyColumn(
-        state = listState,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -245,11 +229,10 @@ private fun FeedList(
             items(rows, key = { it.deliveryId }) { row ->
                 FeedCard(row, onClick = {
                     if (!row.read) onMarkRead(row.deliveryId)
-                    onOpenPerson(row.from)
+                    onOpenPerson(row.from, row.eventId)
                 }, onReply = onReplyToNotification)
             }
         }
-        if (loadingMore) item(key = "load_more") { com.notifyshare.ui.common.LoadMoreFooter() }
     }
 }
 

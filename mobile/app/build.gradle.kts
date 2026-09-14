@@ -16,6 +16,25 @@ val localProperties: Properties = Properties().apply {
 }
 
 val googleClientId: String = localProperties.getProperty("GOOGLE_CLIENT_ID").orEmpty()
+// Client "Android" (nao o Web) — o unico tipo que aceita redirect com esquema
+// customizado (com.notifyshare:/...). Usado so no fallback de login pelo
+// navegador (GoogleWebAuth), quando o Credential Manager nao acha conta no
+// aparelho. Pegue o "ID do cliente" na pagina desse client no Google Cloud
+// Console (Credenciais > o client tipo Android usado no release).
+val googleAndroidClientId: String = localProperties.getProperty("GOOGLE_ANDROID_CLIENT_ID").orEmpty()
+
+// .env fica fora do controle de versao: ajustes de desenvolvimento que o dev
+// muda livremente sem mexer em build.gradle.kts (ver .env.example).
+val dotEnv: Map<String, String> = run {
+    val f = rootProject.file(".env")
+    if (!f.exists()) emptyMap() else f.readLines()
+        .map { it.trim() }
+        .filter { it.isNotBlank() && !it.startsWith("#") && it.contains('=') }
+        .associate { line -> line.substringBefore('=').trim() to line.substringAfter('=').trim() }
+}
+
+/** Itens por página do cofre ("Salvos") quando não há filtro ativo. Vazio/ausente = 100. */
+val vaultPageSize: String = dotEnv["VAULT_PAGE_SIZE"].orEmpty()
 
 android {
     namespace = "com.notifyshare"
@@ -27,10 +46,17 @@ android {
         // canais de notificacao mudam o suficiente para virar um caso a parte.
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.1.2"
 
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
+        buildConfigField("String", "GOOGLE_ANDROID_CLIENT_ID", "\"$googleAndroidClientId\"")
+        buildConfigField("String", "VAULT_PAGE_SIZE", "\"$vaultPageSize\"")
+
+        // AppAuth registra sozinho, via manifest merge, uma activity que recebe
+        // esse esquema de volta do navegador (com.notifyshare:/oauth2redirect) —
+        // e o fallback do login Google quando não há conta no aparelho.
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.notifyshare"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -142,6 +168,7 @@ dependencies {
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.google.identity.googleid)
+    implementation(libs.openid.appauth)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.junit)

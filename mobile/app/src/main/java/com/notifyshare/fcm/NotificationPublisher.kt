@@ -42,8 +42,8 @@ class NotificationPublisher(private val context: Context) {
             else -> appLabel
         }
         val body = when (mode) {
-            "sender_only" -> "Conteudo oculto — so o remetente"
-            else -> content?.str("body") ?: "Nova notificacao"
+            "sender_only" -> "Conteúdo oculto — só o remetente"
+            else -> content?.str("body") ?: "Nova notificação"
         }
 
         notify(
@@ -108,7 +108,6 @@ class NotificationPublisher(private val context: Context) {
             PackageManager.PERMISSION_GRANTED
 
     private fun friendlyPackage(pkg: String): String = when {
-        pkg == "system:phone" -> "Meu celular"
         pkg.startsWith("system:") -> pkg.removePrefix("system:").replaceFirstChar(Char::uppercase)
         else -> runCatching {
             val pm = context.packageManager

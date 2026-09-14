@@ -35,8 +35,6 @@ import com.notifyshare.data.FeedQuery
 import com.notifyshare.data.FeedRepository
 import com.notifyshare.data.remote.FeedItemDto
 import com.notifyshare.ui.common.EmptyState
-import com.notifyshare.ui.common.InfiniteListHandler
-import com.notifyshare.ui.common.LoadMoreFooter
 import com.notifyshare.ui.common.LoadingBox
 import com.notifyshare.ui.common.NotificationFiltersSheet
 import com.notifyshare.ui.common.PillButton
@@ -65,9 +63,9 @@ data class PersonNotifState(
     val refreshing: Boolean = false,
     val filter: FeedQuery = FeedQuery(),
     val knownPackages: List<String> = emptyList(),
+    /** paginacao por numero de pagina, igual a de Salvos (pagina atual, base 0) */
     val page: Int = 0,
-    val loadingMore: Boolean = false,
-    val endReached: Boolean = false,
+    val totalCount: Long = 0,
 ) {
     val activeFilterCount: Int
         get() = listOf(filter.packageName, filter.type, filter.period.takeIf { it != "all" }).count { it != null }
@@ -86,30 +84,32 @@ class PersonNotificationsViewModel(
     fun refresh() {
         com.notifyshare.core.Connectivity.probeBeforeRefresh()
         _state.value = _state.value.copy(refreshing = true)
-        load(_state.value.direction, silent = true)
+        load(_state.value.direction, silent = true, page = _state.value.page)
     }
 
     fun applyFilter(filter: FeedQuery) {
         _state.value = _state.value.copy(filter = filter)
-        load(_state.value.direction, silent = true)
+        load(_state.value.direction, silent = true, page = 0)
     }
 
     fun clearFilter() = applyFilter(FeedQuery())
 
-    fun load(direction: String, silent: Boolean = false) {
+    /** Troca de pagina (paginacao numerada, igual a de Salvos). */
+    fun goToPage(page: Int) = load(_state.value.direction, silent = true, page = page)
+
+    fun load(direction: String, silent: Boolean = false, page: Int = 0) {
         _state.value = _state.value.copy(loading = !silent, direction = direction)
         val current = _state.value
         viewModelScope.launch {
-            when (val r = repo.conversation(nickname, direction, current.filter, page = 0)) {
+            when (val r = repo.conversation(nickname, direction, current.filter, page = page)) {
                 is ApiResult.Ok -> _state.value = current.copy(
                     loading = false,
                     refreshing = false,
-                    items = r.value,
+                    items = r.value.items,
                     failedToLoad = false,
-                    page = 0,
-                    endReached = r.value.size < repo.pageSize,
-                    loadingMore = false,
-                    knownPackages = (current.knownPackages + r.value.map { it.packageName }).distinct().sorted(),
+                    page = page,
+                    totalCount = r.value.total,
+                    knownPackages = (current.knownPackages + r.value.items.map { it.packageName }).distinct().sorted(),
                 )
                 is ApiResult.Failure -> _state.value = current.copy(
                     loading = false,
@@ -117,25 +117,6 @@ class PersonNotificationsViewModel(
                     items = emptyList(),
                     failedToLoad = true,
                 )
-            }
-        }
-    }
-
-    fun loadMore() {
-        val current = _state.value
-        if (current.loadingMore || current.endReached || current.loading) return
-        _state.value = current.copy(loadingMore = true)
-        viewModelScope.launch {
-            val next = current.page + 1
-            when (val r = repo.conversation(nickname, current.direction, current.filter, page = next)) {
-                is ApiResult.Ok -> _state.value = _state.value.copy(
-                    items = (current.items + r.value).distinctBy { it.deliveryId },
-                    page = next,
-                    loadingMore = false,
-                    endReached = r.value.size < repo.pageSize,
-                    knownPackages = (_state.value.knownPackages + r.value.map { it.packageName }).distinct().sorted(),
-                )
-                is ApiResult.Failure -> _state.value = _state.value.copy(loadingMore = false)
             }
         }
     }
@@ -148,7 +129,9 @@ fun PersonNotificationsScreen(
     nickname: String,
     onBack: () -> Unit,
     highlightEventId: String? = null,
-    onReplyToNotification: (eventId: String) -> Unit = {},
+    /** Carrega a notificação inteira (não só o id) — quem chama já tem o texto
+     *  pra mostrar no compositor sem esperar o envio ida-e-volta. */
+    onReplyToNotification: (row: FeedItemDto) -> Unit = {},
     /** Dentro do hub da pessoa o cabecalho ja existe — aqui vira so uma barra de filtro. */
     embedded: Boolean = false,
 ) {
@@ -160,21 +143,29 @@ fun PersonNotificationsScreen(
     val listState = rememberLazyListState()
 
     // Chegou aqui vindo de "responder uma notificação" no chat: rola ate a
-    // notificação em questao e pisca o fundo.
-    androidx.compose.runtime.LaunchedEffect(highlightEventId, state.items) {
-        val target = highlightEventId ?: return@LaunchedEffect
-        
+    // notificação em questao e pisca o fundo. `pending` guarda o alvo só até
+    // achar e destacar — sem isso, trocar de aba NA MÃO depois (Ele
+    // envia/Eu envio) mudava state.items de novo, o efeito disparava de novo
+    // achando que ainda precisava trocar de aba, e voltava sozinho pra aba
+    // onde o evento estava (o bug do "some sozinho de volta").
+    var pending by remember(highlightEventId) { mutableStateOf(highlightEventId) }
+    androidx.compose.runtime.LaunchedEffect(pending, state.items) {
+        val target = pending ?: return@LaunchedEffect
+
         // Se não encontrou o evento na aba atual, tenta a outra aba
         if (state.items.none { it.eventId == target }) {
-            val newDirection = if (state.direction == "received") "sent" else "received"
-            vm.load(newDirection, silent = false)
+            if (!state.loading) {
+                val newDirection = if (state.direction == "received") "sent" else "received"
+                vm.load(newDirection, silent = false)
+            }
             return@LaunchedEffect
         }
-        
+
         val flat = flatIndexOfEvent(state.items, target)
         if (flat >= 0) {
             listState.animateScrollToItem(flat)
             highlightId = state.items.firstOrNull { it.eventId == target }?.deliveryId
+            pending = null // achado e destacado — não reage mais a troca manual de aba
             delay(2000)
             highlightId = null
         }
@@ -222,42 +213,54 @@ fun PersonNotificationsScreen(
             )
         }
 
-        when {
-            state.loading -> LoadingBox()
-            state.failedToLoad && state.items.isEmpty() ->
-                com.notifyshare.ui.common.ErrorRetry(
-                    "Não foi possível carregar estas notificações.",
-                    { vm.load(state.direction) },
-                )
-            else -> PullRefresh(state.refreshing, vm::refresh) {
-                if (state.items.isEmpty()) {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        item {
-                            EmptyState(
-                                if (state.activeFilterCount > 0) "Nada bate com esses filtros."
-                                else "Nada aqui ainda.",
-                            )
-                        }
-                    }
-                } else {
-                    InfiniteListHandler(listState, onLoadMore = vm::loadMore)
-                    val grouped = state.items.groupBy { dayBucket(it.occurredAt) }
-                    LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        grouped.forEach { (bucket, rows) ->
-                            item(key = "h_$bucket") { SectionLabel(bucket) }
-                            items(rows, key = { it.deliveryId }) { row ->
-                                Item(
-                                    row,
-                                    highlighted = row.deliveryId == highlightId,
-                                    onClick = { detailOf = row },
-                                    onReply = { onReplyToNotification(row.eventId) },
-                                )
+        Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f)) {
+                when {
+                    state.loading -> LoadingBox()
+                    state.failedToLoad && state.items.isEmpty() ->
+                        com.notifyshare.ui.common.ErrorRetry(
+                            "Não foi possível carregar estas notificações.",
+                            { vm.load(state.direction) },
+                        )
+                    else -> PullRefresh(state.refreshing, vm::refresh) {
+                        if (state.items.isEmpty()) {
+                            LazyColumn(Modifier.fillMaxSize()) {
+                                item {
+                                    EmptyState(
+                                        if (state.activeFilterCount > 0) "Nada bate com esses filtros."
+                                        else "Nada aqui ainda.",
+                                    )
+                                }
+                            }
+                        } else {
+                            val grouped = state.items.groupBy { dayBucket(it.occurredAt) }
+                            LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                grouped.forEach { (bucket, rows) ->
+                                    item(key = "h_$bucket") { SectionLabel(bucket) }
+                                    items(rows, key = { it.deliveryId }) { row ->
+                                        Item(
+                                            row,
+                                            highlighted = row.deliveryId == highlightId,
+                                            onClick = { detailOf = row },
+                                            onReply = { onReplyToNotification(row) },
+                                        )
+                                    }
+                                }
                             }
                         }
-                        if (state.loadingMore) item(key = "load_more") { LoadMoreFooter() }
                     }
                 }
             }
+
+            val pageSize = 100
+            val totalPages = ((state.totalCount + pageSize - 1) / pageSize).toInt().coerceAtLeast(1)
+            com.notifyshare.ui.common.PageBar(
+                page = state.page + 1,
+                totalPages = totalPages,
+                totalCount = state.totalCount.toInt(),
+                show = !state.loading && (state.items.isNotEmpty() || state.page > 0),
+                onPage = { vm.goToPage(it - 1) },
+            )
         }
     }
 
@@ -276,7 +279,7 @@ fun PersonNotificationsScreen(
         NotificationDetailSheet(
             row = row,
             nickname = nickname,
-            onReply = { onReplyToNotification(row.eventId); detailOf = null },
+            onReply = { onReplyToNotification(row); detailOf = null },
             onDismiss = { detailOf = null },
         )
     }
@@ -428,7 +431,7 @@ private fun NotificationDetailSheet(
             )
             DetailLine(
                 "Conteúdo compartilhado",
-                if (row.mode == "sender_only") "Só o remetente (sem texto)" else "Texto completo",
+                if (row.mode == "sender_only") "Só o remetente (sem texto)" else eventBody(row),
             )
             DetailLine("Lida", if (row.read) "Sim" else "Não")
 

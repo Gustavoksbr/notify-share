@@ -136,41 +136,6 @@ fun LoadingBox(modifier: Modifier = Modifier) {
     }
 }
 
-/** Rodape de "carregando mais" para listas paginadas. */
-@Composable
-fun LoadMoreFooter() {
-    Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) {
-        CircularProgressIndicator(
-            color = MaterialTheme.colorScheme.primary,
-            strokeWidth = 2.dp,
-            modifier = Modifier.size(22.dp),
-        )
-    }
-}
-
-/**
- * Dispara [onLoadMore] quando o scroll chega perto do fim da lista. Usado nas
- * telas de notificacoes (feed geral e por pessoa), 100 itens por pagina.
- */
-@Composable
-fun InfiniteListHandler(
-    listState: androidx.compose.foundation.lazy.LazyListState,
-    buffer: Int = 6,
-    onLoadMore: () -> Unit,
-) {
-    val shouldLoadMore = androidx.compose.runtime.remember {
-        androidx.compose.runtime.derivedStateOf {
-            val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf false
-            info.totalItemsCount > 0 && last >= info.totalItemsCount - 1 - buffer
-        }
-    }
-    androidx.compose.runtime.LaunchedEffect(shouldLoadMore) {
-        androidx.compose.runtime.snapshotFlow { shouldLoadMore.value }
-            .collect { if (it) onLoadMore() }
-    }
-}
-
 @Composable
 fun EmptyState(text: String, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize().padding(32.dp), Alignment.Center) {

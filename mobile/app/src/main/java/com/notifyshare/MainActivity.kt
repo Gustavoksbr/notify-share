@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,16 +66,10 @@ private object Routes {
     const val LOGIN = "login"
     const val REGISTER = "register"
     const val RECOVER = "recover"
-    const val PRIVACY = "privacy"
 }
 
 @Composable
 private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
-    val hasSession by container.authRepository.hasSession.collectAsStateWithLifecycle(initialValue = false)
-    val context = LocalContext.current
-    // "Adicionar conta": mostra o login mesmo com uma sessao ativa.
-    var addingAccount by remember { mutableStateOf(false) }
-
     // Social x Local: independente de login, sobrevive a trocar/adicionar conta.
     val mode by container.appMode.flow.collectAsStateWithLifecycle(
         initialValue = com.notifyshare.data.local.AppMode.SOCIAL,
@@ -83,6 +78,28 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
     val onModeChange: (com.notifyshare.data.local.AppMode) -> Unit = { m ->
         modeScope.launch { container.appMode.set(m) }
     }
+
+    // Idioma da interface (PT/EN): a UI (Preferências) e a persistência
+    // (LanguageStore) já existem prontas, só a troca de verdade fica pra depois
+    // — traduzir as ~150 telas do app é trabalho grande demais pra fazer agora.
+    // Pra religar: descomente as 3 linhas abaixo (o resto já está pronto).
+    // val lang by container.language.flow.collectAsStateWithLifecycle(initialValue = "pt")
+    // CompositionLocalProvider(com.notifyshare.ui.common.LocalAppLanguage provides lang) {
+    NotifyShareRootContent(container, openTarget, mode, onModeChange)
+    // }
+}
+
+@Composable
+private fun NotifyShareRootContent(
+    container: AppContainer,
+    openTarget: String?,
+    mode: com.notifyshare.data.local.AppMode,
+    onModeChange: (com.notifyshare.data.local.AppMode) -> Unit,
+) {
+    val hasSession by container.authRepository.hasSession.collectAsStateWithLifecycle(initialValue = false)
+    val context = LocalContext.current
+    // "Adicionar conta": mostra o login mesmo com uma sessao ativa.
+    var addingAccount by remember { mutableStateOf(false) }
 
     // Criado sempre (barato). Antes ficava depois do early-return, e o
     // authComplete de um login anterior ainda ficava true — ao "adicionar conta"
@@ -148,8 +165,8 @@ private fun NotifyShareRoot(container: AppContainer, openTarget: String?) {
     // barra de baixo (só volta quando o usuário logar).
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.statusBarsPadding()) {
-            com.notifyshare.ui.shell.AppModeSwitcher(mode, onModeChange)
             com.notifyshare.ui.common.AppWarningBanners(container)
+            com.notifyshare.ui.shell.AppModeSwitcher(mode, onModeChange)
         }
         Box(Modifier.weight(1f)) {
             AuthNavHost(authViewModel, addingAccount = false, onCancelAdd = {})
@@ -164,6 +181,7 @@ private fun AuthNavHost(
     onCancelAdd: () -> Unit,
 ) {
     val navController = rememberNavController()
+    val context = LocalContext.current
 
     NavHost(navController = navController, startDestination = Routes.LOGIN) {
         composable(Routes.LOGIN) {
@@ -178,7 +196,7 @@ private fun AuthNavHost(
             RegisterScreen(
                 viewModel = authViewModel,
                 onGoToLogin = { navController.popBackStack() },
-                onOpenPrivacy = { navController.navigate(Routes.PRIVACY) },
+                onOpenPrivacy = { com.notifyshare.ui.common.openUrl(context, com.notifyshare.ui.common.PRIVACY_POLICY_URL) },
             )
         }
         composable(Routes.RECOVER) {
@@ -187,9 +205,6 @@ private fun AuthNavHost(
                 onBack = { navController.popBackStack() },
                 onDone = { navController.popBackStack(Routes.LOGIN, inclusive = false) },
             )
-        }
-        composable(Routes.PRIVACY) {
-            com.notifyshare.ui.settings.PrivacyScreen(onBack = { navController.popBackStack() })
         }
     }
 }

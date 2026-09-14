@@ -78,6 +78,30 @@ interface EventDeliveryRepository : JpaRepository<EventDelivery, UUID> {
         pageable: Pageable,
     ): List<FeedRow>
 
+    /** Total de entregas que batem com os mesmos filtros de [feed], sem paginar — usado
+     *  para montar "Página X de Y" no app. */
+    @Query(
+        """
+        select count(d)
+        from EventDelivery d, Event e
+        where e.id = d.eventId
+          and d.recipientId = :recipientId
+          and (:originUserId is null or e.originUserId = :originUserId)
+          and (:packageName  is null or e.packageName  = :packageName)
+          and (:eventType    is null or e.eventType    = :eventType)
+          and (:senderHash   is null or e.senderHash   = :senderHash)
+          and e.occurredAt >= :since
+        """
+    )
+    fun countFeed(
+        @Param("recipientId") recipientId: UUID,
+        @Param("originUserId") originUserId: UUID?,
+        @Param("packageName") packageName: String?,
+        @Param("eventType") eventType: String?,
+        @Param("senderHash") senderHash: String?,
+        @Param("since") since: Instant,
+    ): Long
+
     @Query("select count(d) from EventDelivery d where d.recipientId = :recipientId and d.readAt is null")
     fun countUnread(@Param("recipientId") recipientId: UUID): Long
 

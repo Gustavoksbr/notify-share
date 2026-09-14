@@ -111,7 +111,7 @@ class EventController(private val events: EventService) {
         @RequestParam(defaultValue = "all") period: String,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
-    ): List<FeedItemView> = events.feed(
+    ): com.notifyshare.events.application.FeedPage = events.feed(
         me.id,
         FeedFilter(from, packageName, type, sender, period),
         page, size,
@@ -132,7 +132,7 @@ class EventController(private val events: EventService) {
         @RequestParam(defaultValue = "all") period: String,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
-    ): List<FeedItemView> = events.conversation(
+    ): com.notifyshare.events.application.FeedPage = events.conversation(
         me.id, with, direction,
         FeedFilter(null, packageName, type, sender, period),
         page, size,

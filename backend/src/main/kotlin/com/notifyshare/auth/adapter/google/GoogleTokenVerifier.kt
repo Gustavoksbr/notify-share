@@ -53,7 +53,7 @@ class GoogleTokenVerifier(private val properties: GoogleProperties) {
 
         val body = response.body()
         val aud = field(body, "aud")
-        if (aud != properties.clientId) {
+        if (aud !in properties.acceptedAudiences) {
             log.warn("aud do token nao bate: {}", aud)
             throw UnauthorizedException("google_audience_mismatch", "Esse token nao e para este app")
         }
