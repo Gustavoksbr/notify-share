@@ -102,6 +102,17 @@ class UserProfileViewModel(
     fun block() = toggleBlock(true) { repo.block(nickname) }
     fun unblock() = toggleBlock(false) { repo.unblock(nickname) }
 
+    /** Desfaz a amizade sem bloquear — a pessoa continua podendo te adicionar de novo depois. */
+    fun unfriend() = viewModelScope.launch {
+        _state.value = _state.value.copy(working = true, notice = null)
+        when (val r = repo.removeFriend(nickname)) {
+            is ApiResult.Ok -> _state.value = _state.value.copy(working = false, notice = "Amizade desfeita.")
+            is ApiResult.Failure -> _state.value = _state.value.copy(working = false, notice = r.message)
+        }
+        load()
+        signalSocial()
+    }
+
     /** O estado "bloqueado" vira na hora; a API e o reload vao em segundo plano. */
     private fun toggleBlock(blocked: Boolean, call: suspend () -> ApiResult<*>) = viewModelScope.launch {
         val before = _state.value.profile
@@ -173,6 +184,7 @@ fun UserProfileScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var confirmBlock by remember { mutableStateOf(false) }
+    var confirmUnfriend by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Perfil", onBack = onBack)
@@ -279,6 +291,16 @@ fun UserProfileScreen(
 
                     Spacer(Modifier.height(24.dp))
 
+                    if (p.friend && !p.blockedByMe) {
+                        com.notifyshare.ui.common.OutlinedActionButton(
+                            "Desfazer amizade",
+                            onClick = { confirmUnfriend = true },
+                            enabled = !state.working,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+
                     if (p.blockedByMe) {
                         com.notifyshare.ui.common.OutlinedActionButton(
                             "Desbloquear",
@@ -321,6 +343,28 @@ fun UserProfileScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmBlock = false }) { Text("Cancelar") }
+            },
+        )
+    }
+
+    if (confirmUnfriend) {
+        AlertDialog(
+            onDismissRequest = { confirmUnfriend = false },
+            title = { Text("Desfazer amizade com @${vm.nickname}?") },
+            text = {
+                Text(
+                    "Vocês deixam de ser amigos e qualquer compartilhamento de notificações entre " +
+                        "vocês é encerrado. Ela pode te adicionar de novo depois, se quiser.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmUnfriend = false
+                    vm.unfriend()
+                }) { Text("Desfazer amizade", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmUnfriend = false }) { Text("Cancelar") }
             },
         )
     }

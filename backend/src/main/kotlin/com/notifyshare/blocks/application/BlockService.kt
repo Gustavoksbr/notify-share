@@ -3,6 +3,7 @@ package com.notifyshare.blocks.application
 import com.notifyshare.auth.adapter.persistence.UserRepository
 import com.notifyshare.blocks.adapter.persistence.BlockRepository
 import com.notifyshare.blocks.domain.Block
+import com.notifyshare.friends.application.FriendService
 import com.notifyshare.shared.web.NotFoundException
 import com.notifyshare.shared.web.ValidationException
 import org.springframework.stereotype.Service
@@ -16,6 +17,7 @@ data class BlockedUserView(val nickname: String, val since: Instant)
 class BlockService(
     private val blocks: BlockRepository,
     private val users: UserRepository,
+    private val friends: FriendService,
 ) {
 
     // --- consultas usadas por outras features ------------------------------
@@ -42,6 +44,10 @@ class BlockService(
         if (target.id == meId) throw ValidationException("self_block", "Voce nao pode bloquear voce mesmo")
         val existing = blocks.findByBlockerIdAndBlockedId(meId, target.id)
         val block = existing ?: blocks.save(Block(blockerId = meId, blockedId = target.id))
+        // Bloquear desfaz a amizade automaticamente (e leva os compartilhamentos
+        // junto, via FriendLinkClearedEvent) — nao faz sentido continuar "amigo"
+        // de quem acabou de ser bloqueado.
+        friends.remove(meId, target.nickname)
         return BlockedUserView(target.nickname, block.createdAt)
     }
 

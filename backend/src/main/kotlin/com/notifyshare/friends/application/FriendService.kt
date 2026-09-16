@@ -1,6 +1,7 @@
 package com.notifyshare.friends.application
 
 import com.notifyshare.auth.adapter.persistence.UserRepository
+import com.notifyshare.blocks.adapter.persistence.BlockRepository
 import com.notifyshare.friends.adapter.persistence.FriendshipRepository
 import com.notifyshare.friends.domain.Friendship
 import com.notifyshare.push.application.PushMessage
@@ -44,6 +45,7 @@ data class PendingRequests(
 class FriendService(
     private val friendships: FriendshipRepository,
     private val users: UserRepository,
+    private val blocks: BlockRepository,
     private val realtime: RealtimePort,
     private val eventPublisher: ApplicationEventPublisher,
     private val pushNotifier: PushNotifier,
@@ -138,6 +140,9 @@ class FriendService(
             ?: throw NotFoundException("user_not_found", "Nao existe ninguem com esse nickname")
         if (target.id == requesterId) {
             throw ValidationException("self_friend", "Voce nao pode adicionar voce mesmo")
+        }
+        if (blocks.existsEitherDirection(requesterId, target.id)) {
+            throw ForbiddenException("blocked", "Nao e possivel enviar pedido de amizade para @${target.nickname}")
         }
 
         val myNickname = users.findById(requesterId).map { it.nickname }.orElse("")

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -113,6 +114,10 @@ fun RecipientRulesScreen(vm: RecipientRulesViewModel, nickname: String, onBack: 
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(state.rules, key = { it.packageName }) { rule ->
+                    // Pausado pelo remetente: a config continua salva, mas nada chega
+                    // agora. Diferente de "nunca configurado" (esse app nem apareceria
+                    // nessa lista) — precisa ficar visualmente claro pra quem recebe.
+                    val pausedBySharer = !rule.enabledBySharer || rule.sharerMode == "paused"
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -122,19 +127,32 @@ fun RecipientRulesScreen(vm: RecipientRulesViewModel, nickname: String, onBack: 
                             .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     ) {
-                        com.notifyshare.ui.common.AppIcon(rule.packageName, size = 36.dp)
+                        com.notifyshare.ui.common.AppIcon(
+                            rule.packageName,
+                            size = 36.dp,
+                            modifier = Modifier.alpha(if (pausedBySharer) 0.5f else 1f),
+                        )
                         Column(Modifier.weight(1f)) {
                             Text(com.notifyshare.ui.common.appLabel(rule.packageName), style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                if (rule.notify) "Notifica você" else "Só no feed — sem aviso",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = NotifyShareColors.muted,
-                            )
+                            if (pausedBySharer) {
+                                Text(
+                                    "Pausado por @$nickname agora",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = NotifyShareColors.warning,
+                                )
+                            } else {
+                                Text(
+                                    if (rule.notify) "Notifica você" else "Só no feed — sem aviso",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = NotifyShareColors.muted,
+                                )
+                            }
                             RecipientSendersLine(rule)
                         }
                         Switch(
                             checked = rule.notify,
                             onCheckedChange = { vm.toggleNotify(rule.packageName, it) },
+                            enabled = !pausedBySharer,
                         )
                     }
                 }

@@ -130,24 +130,24 @@ fun PermissionsScreen(
             },
         )
 
-        // Android 13+: permissao de POSTAR notificacoes (diferente de LER as dos
-        // outros apps). Sem ela o sistema bloqueia os avisos do Notify Share.
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            PermissionCard(
-                title = "Mostrar notificações",
-                scope = "para receber",
-                body = "Deixa o app te avisar quando um amigo compartilhar uma notificação com você.",
-                granted = canPostNotifications,
-                required = true,
-                onClick = {
-                    context.startActivity(
-                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                },
-            )
-        }
+        // Antes do Android 13 nao existe a permissao de runtime POST_NOTIFICATIONS,
+        // mas o usuario ainda pode desativar notificacoes do app manualmente nas
+        // configuracoes do sistema — por isso o card fica visivel em qualquer versao,
+        // igual as outras permissoes, e reflete o estado real via areNotificationsEnabled().
+        PermissionCard(
+            title = "Mostrar notificações",
+            scope = "para receber",
+            body = "Deixa o app te avisar quando um amigo compartilhar uma notificação com você.",
+            granted = canPostNotifications,
+            required = true,
+            onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            },
+        )
 
         // Android 13+ bloqueia essa permissao para apps instalados fora da Play
         // Store ("configuracao restrita"). So aparece se for o caso e ainda nao concedido.

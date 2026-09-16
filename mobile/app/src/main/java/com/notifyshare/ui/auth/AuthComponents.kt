@@ -34,7 +34,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -58,6 +61,7 @@ fun AuthTextField(
     errorField: String? = null,
     fieldName: String? = null,
     errorMessage: String? = null,
+    contentType: ContentType? = null,
 ) {
     val isThisFieldWrong = fieldName != null && fieldName == errorField
 
@@ -105,7 +109,15 @@ fun AuthTextField(
             autoCorrectEnabled = false,
         ),
         shape = RoundedCornerShape(8.dp),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (contentType != null) {
+                    Modifier.semantics { this.contentType = contentType }
+                } else {
+                    Modifier
+                },
+            ),
     )
 }
 
@@ -206,6 +218,7 @@ fun GoogleSignInButton(viewModel: AuthViewModel, modifier: Modifier = Modifier) 
 @Composable
 fun GoogleNicknameDialog(viewModel: AuthViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     if (!state.needsGoogleNickname) return
 
     AlertDialog(
@@ -229,16 +242,24 @@ fun GoogleNicknameDialog(viewModel: AuthViewModel) {
                     errorMessage = state.errorMessage,
                 )
                 Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
                     androidx.compose.material3.Checkbox(
                         checked = state.acceptedPrivacy,
                         onCheckedChange = viewModel::onAcceptPrivacyChange,
                     )
-                    Text(
-                        "Aceito a Política de Privacidade",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Column {
+                        Text(
+                            "Aceito a Política de Privacidade",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(
+                            onClick = { com.notifyshare.ui.common.openUrl(context, com.notifyshare.ui.common.PRIVACY_POLICY_URL) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        ) {
+                            Text("Ver Política de Privacidade", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                 }
             }
         },

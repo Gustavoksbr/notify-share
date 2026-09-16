@@ -20,6 +20,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.platform.LocalAutofillManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,6 +36,7 @@ fun RegisterScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
+    val autofillManager = LocalAutofillManager.current
 
     Column(
         modifier = modifier
@@ -65,6 +68,7 @@ fun RegisterScreen(
                 errorField = state.errorField,
                 fieldName = "nickname",
                 errorMessage = state.errorMessage,
+                contentType = ContentType.NewUsername,
             )
 
             AuthTextField(
@@ -75,6 +79,7 @@ fun RegisterScreen(
                 errorField = state.errorField,
                 fieldName = "email",
                 errorMessage = state.errorMessage,
+                contentType = ContentType.EmailAddress,
             )
 
             AuthTextField(
@@ -86,6 +91,7 @@ fun RegisterScreen(
                 errorField = state.errorField,
                 fieldName = "password",
                 errorMessage = state.errorMessage,
+                contentType = ContentType.NewPassword,
             )
 
             if (state.errorMessage != null && state.errorField == null) {
@@ -102,7 +108,10 @@ fun RegisterScreen(
 
             PrimaryButton(
                 text = "Criar conta",
-                onClick = viewModel::register,
+                onClick = {
+                    autofillManager?.commit()
+                    viewModel.register()
+                },
                 enabled = state.canSubmitRegister,
                 loading = state.loading,
             )

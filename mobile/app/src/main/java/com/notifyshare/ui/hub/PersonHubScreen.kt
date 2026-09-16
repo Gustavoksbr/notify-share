@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -296,7 +297,7 @@ fun PersonHubScreen(
                         if (i != HubTab.NOTIFICACOES.ordinal) highlightEvent = null
                         tabIndex = i
                     },
-                    text = { Text(t.label) },
+                    text = { Text(t.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 )
             }
         }

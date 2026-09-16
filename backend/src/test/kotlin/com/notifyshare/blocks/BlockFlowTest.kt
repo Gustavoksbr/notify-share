@@ -84,13 +84,51 @@ class BlockFlowTest {
     }
 
     @Test
-    fun `desbloquear restaura a conversa`() {
+    fun `desbloquear nao recria a amizade sozinho, precisa pedir de novo`() {
         val a = register("unb_a"); val b = register("unb_b")
         befriend(a, b, "unb_b")
         post("/blocks", a, """{"nickname":"unb_b"}""")
 
         assertEquals(204, delete("/blocks/unb_b", a).status)
+        // desfeita pelo bloqueio, o unblock nao restaura a amizade sozinho
+        val stillNotFriends = post("/conversations/unb_b/messages", a, """{"body":"de novo"}""")
+        assertEquals(403, stillNotFriends.status)
+        assertTrue(stillNotFriends.body.contains("not_friends"), stillNotFriends.body)
+
+        // pedindo amizade de novo, a conversa volta a funcionar
+        befriend(a, b, "unb_b")
         assertEquals(200, post("/conversations/unb_b/messages", a, """{"body":"de novo"}""").status)
+    }
+
+    @Test
+    fun `bloquear desfaz a amizade e derruba os compartilhamentos`() {
+        val a = register("ublk_a"); val b = register("ublk_b")
+        befriend(a, b, "ublk_b")
+        val gid = field(post("/grants/offers", a, """{"nickname":"ublk_b"}""").body, "id")
+        post("/grants/$gid/accept", b)
+
+        post("/blocks", a, """{"nickname":"ublk_b"}""")
+
+        val profile = get("/users/ublk_b/profile", a)
+        assertTrue(profile.body.contains("\"friend\":false"), profile.body)
+        assertTrue(profile.body.contains("\"blockedByMe\":true"), profile.body)
+
+        // amizade some tambem do lado de quem foi bloqueado
+        assertTrue(get("/friends", b).body == "[]", get("/friends", b).body)
+    }
+
+    @Test
+    fun `quem foi bloqueado nao consegue mandar pedido de amizade`() {
+        val a = register("reqblk_a"); val b = register("reqblk_b")
+        post("/blocks", a, """{"nickname":"reqblk_b"}""")
+
+        val fromBlocked = post("/friends/requests", b, """{"nickname":"reqblk_a"}""")
+        assertEquals(403, fromBlocked.status)
+        assertTrue(fromBlocked.body.contains("blocked"), fromBlocked.body)
+
+        val fromBlocker = post("/friends/requests", a, """{"nickname":"reqblk_b"}""")
+        assertEquals(403, fromBlocker.status)
+        assertTrue(fromBlocker.body.contains("blocked"), fromBlocker.body)
     }
 
     @Test

@@ -21,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.platform.LocalAutofillManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,6 +38,7 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
+    val autofillManager = LocalAutofillManager.current
 
     Column(
         modifier = modifier
@@ -84,6 +87,7 @@ fun LoginScreen(
                 errorField = state.errorField,
                 fieldName = "identifier",
                 errorMessage = state.errorMessage,
+                contentType = ContentType.Username,
             )
 
             AuthTextField(
@@ -94,6 +98,7 @@ fun LoginScreen(
                 errorField = state.errorField,
                 fieldName = "password",
                 errorMessage = state.errorMessage,
+                contentType = ContentType.Password,
             )
 
             // "Esqueci a senha" logo abaixo do campo, alinhado à direita — ocupa
@@ -115,7 +120,12 @@ fun LoginScreen(
 
             PrimaryButton(
                 text = "Entrar",
-                onClick = viewModel::login,
+                onClick = {
+                    // Sinaliza pro Autofill que os dados sao definitivos, senao o
+                    // Gerenciador de Senhas do Google nao oferece salvar aqui.
+                    autofillManager?.commit()
+                    viewModel.login()
+                },
                 enabled = state.canSubmitLogin,
                 loading = state.loading,
             )
