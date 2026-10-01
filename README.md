@@ -7,9 +7,6 @@ https://github.com/Gustavoksbr/notify-share
 Compartilhe as notificações do seu Android com pessoas que você escolher — e só
 o que você escolher.
 
-**100% open source** — app, backend e infraestrutura, tudo neste repositório,
-sem partes fechadas.
-
 ---
 
 ## Descrição
