@@ -56,8 +56,8 @@ android {
         // canais de notificacao mudam o suficiente para virar um caso a parte.
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.1.5"
+        versionCode = 12
+        versionName = "0.1.10"
 
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "GOOGLE_ANDROID_CLIENT_ID", "\"$googleAndroidClientId\"")
@@ -174,7 +174,14 @@ dependencies {
     implementation(libs.firebase.messaging)
     implementation(libs.firebase.crashlytics)
     // Analytics: da ao Crashlytics a trilha de eventos antes do crash (breadcrumbs).
-    implementation(libs.firebase.analytics)
+    // Exclui o modulo que le o ID de publicidade (Advertising ID) — nao usamos
+    // anuncio nenhum, e sem isso a declaracao "usa ID de publicidade?" na Play
+    // Console nunca fecha como "Nao" de verdade (o Google escaneia o binario
+    // procurando essa classe, nao so a permissao no manifesto). Exclusao
+    // oficialmente documentada pelo Firebase para esse cenario.
+    implementation(libs.firebase.analytics) {
+        exclude(group = "com.google.android.gms", module = "play-services-ads-identifier")
+    }
 
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)

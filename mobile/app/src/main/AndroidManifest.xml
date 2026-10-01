@@ -23,6 +23,15 @@
     <!-- Seletor de contato do WhatsApp em Apps: mostra nome + numero da agenda
          em vez de pedir para digitar. Pedida so quando o usuario abre o seletor. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- O Firebase Analytics (usado so para dar breadcrumbs ao Crashlytics, ver
+         build.gradle.kts) traz essa permissao de brinde. Nao tem anuncio nem uso
+         de ID de publicidade no app — removida explicitamente para a declaracao
+         da Play Console ("usa ID de publicidade? Nao") ficar de fato verdadeira. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
+    <!-- Equivalente moderno (Privacy Sandbox / Android 13+) do AD_ID acima. -->
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_AD_ID"
+        tools:node="remove" />
 
     <application
         android:name=".NotifyShareApp"

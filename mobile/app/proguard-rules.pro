@@ -40,6 +40,12 @@
 -keep class com.google.firebase.crashlytics.** { *; }
 -dontwarn com.google.firebase.crashlytics.**
 
+# play-services-measurement (Analytics) referencia AdvertisingIdClient mesmo
+# com o modulo play-services-ads-identifier excluido do classpath (ver
+# build.gradle.kts) — o R8 em modo completo falha o build achando classe
+# faltando. Nao usamos ID de publicidade, entao e seguro so avisar e seguir.
+-dontwarn com.google.android.gms.ads.identifier.**
+
 # Retrofit/OkHttp: sem isso o proxy dinamico da interface da API perde a
 # assinatura generica dos "suspend fun" e o Retrofit nao consegue montar a
 # call. Tambem cobre os avisos de classes opcionais que a OkHttp referencia
