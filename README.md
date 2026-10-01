@@ -34,6 +34,18 @@ quê: app por app, remetente por remetente, conteúdo completo ou só o aviso de
 
 ---
 
+## Capturas de tela
+
+<p align="center">
+  <img src="docs/screenshots/screenshot-feed.png" width="180" alt="Feed de notificações" />
+  <img src="docs/screenshots/screenshot-perfil.png" width="180" alt="Perfil" />
+  <img src="docs/screenshots/screenshot-chat.png" width="180" alt="Chat com histórico de compartilhamento" />
+  <img src="docs/screenshots/screenshot-amigos.png" width="180" alt="Lista de amigos" />
+  <img src="docs/screenshots/screenshot-compartilhar.png" width="180" alt="Regras de compartilhamento por app" />
+</p>
+
+---
+
 ## Como funciona
 
 ```
