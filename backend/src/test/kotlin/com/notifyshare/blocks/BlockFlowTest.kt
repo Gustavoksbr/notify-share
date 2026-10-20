@@ -68,7 +68,7 @@ class BlockFlowTest {
     }
 
     @Test
-    fun `bloqueio barra os dois sentidos com codigos distintos`() {
+    fun `bloqueio desfaz a amizade e barra mensagens nos dois sentidos`() {
         val a = register("blk_a"); val b = register("blk_b")
         befriend(a, b, "blk_b")
 
@@ -76,11 +76,11 @@ class BlockFlowTest {
 
         val fromBlocker = post("/conversations/blk_b/messages", a, """{"body":"oi"}""")
         assertEquals(403, fromBlocker.status)
-        assertTrue(fromBlocker.body.contains("you_blocked_them"), fromBlocker.body)
+        assertTrue(fromBlocker.body.contains("not_friends"), fromBlocker.body)
 
         val fromBlocked = post("/conversations/blk_a/messages", b, """{"body":"me bloqueou?"}""")
         assertEquals(403, fromBlocked.status)
-        assertTrue(fromBlocked.body.contains("blocked_by_them"), fromBlocked.body)
+        assertTrue(fromBlocked.body.contains("not_friends"), fromBlocked.body)
     }
 
     @Test
