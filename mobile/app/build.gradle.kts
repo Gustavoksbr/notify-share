@@ -56,8 +56,8 @@ android {
         // canais de notificacao mudam o suficiente para virar um caso a parte.
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.1.10"
+        versionCode = 13
+        versionName = "0.1.11"
 
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "GOOGLE_ANDROID_CLIENT_ID", "\"$googleAndroidClientId\"")
